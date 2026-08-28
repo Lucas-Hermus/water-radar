@@ -1,67 +1,51 @@
-// Probe ronde 3: verwachtingen vinden.
+// Probe ronde 4: verwachtingen ophalen en stationinventaris bepalen.
 const log = (...a) => console.log(...a);
-const clip = (s, n = 1500) => { s = typeof s === 'string' ? s : JSON.stringify(s); return s.length > n ? s.slice(0, n) + `\n…[${s.length}]` : s; };
+const clip = (s, n = 1200) => { s = typeof s === 'string' ? s : JSON.stringify(s); return s.length > n ? s.slice(0, n) + `\n…[${s.length}]` : s; };
 const post = (b) => ({ method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b) });
+const BASE = 'https://ddapi20-waterwebservices.rijkswaterstaat.nl';
 
-// --- 1. Welke API-routes gebruikt waterinfo zelf?
-log('='.repeat(70), '\n# waterinfo JS-bundels doorzoeken op /api/-routes');
-try {
-  const html = await (await fetch('https://waterinfo.rws.nl/publiek/waterhoogte')).text();
-  log('html lengte', html.length);
-  const srcs = [...html.matchAll(/(?:src|href)="([^"]+\.js[^"]*)"/g)].map(m => m[1]);
-  log('scripts:', srcs.join('\n  '));
-  const routes = new Set();
-  for (const s of srcs.slice(0, 25)) {
-    const u = s.startsWith('http') ? s : new URL(s, 'https://waterinfo.rws.nl/publiek/waterhoogte').href;
-    try {
-      const js = await (await fetch(u)).text();
-      for (const m of js.matchAll(/["'`\/]((?:\/)?api\/[A-Za-z0-9_\-\/{}.$]{2,60})/g)) routes.add(m[1]);
-    } catch (e) { log('  js fout', u, e.message); }
-  }
-  log('gevonden routes:\n  ' + [...routes].sort().join('\n  '));
-  // inline routes in html
-  const inline = new Set();
-  for (const m of html.matchAll(/api\/[A-Za-z0-9_\-\/{}.$]{2,60}/g)) inline.add(m[0]);
-  log('routes in html:\n  ' + [...inline].sort().join('\n  '));
-} catch (e) { log('FOUT', e.message); }
+const cat = await (await fetch(BASE + '/METADATASERVICES/OphalenCatalogus',
+  post({ CatalogusFilter: { Grootheden: true, ProcesTypes: true, Hoedanigheden: true, Eenheden: true, Compartimenten: true } }))).json();
 
-// --- 2. DD-API: bestaan er verwachting-grootheden / procestypes?
-log('\n' + '='.repeat(70), '\n# DD-API grootheden/procestypes met "verwacht"');
-try {
-  const j = await (await fetch('https://ddapi20-waterwebservices.rijkswaterstaat.nl/METADATASERVICES/OphalenCatalogus',
-    post({ CatalogusFilter: { Grootheden: true, ProcesTypes: true, Hoedanigheden: true, Eenheden: true, Compartimenten: true } }))).json();
-  const set = new Set(), proc = new Set();
-  for (const a of j.AquoMetadataLijst || []) {
-    if (/verwacht|astronom|voorspel/i.test(JSON.stringify(a))) set.add(JSON.stringify({ id: a.AquoMetadata_MessageID, G: a.Grootheid, P: a.Procestype || a.ProcesType, H: a.Hoedanigheid, E: a.Eenheid }));
-    if (a.Procestype || a.ProcesType) proc.add(JSON.stringify(a.Procestype || a.ProcesType));
-  }
-  log('verwachting-achtige metadata:\n  ' + [...set].slice(0, 25).join('\n  '));
-  log('procestypes:', [...proc].slice(0, 30).join(' | '));
-  const wathteNap = (j.AquoMetadataLijst || []).find(a => a.Grootheid?.Code === 'WATHTE' && a.Hoedanigheid?.Code === 'NAP' && a.Eenheid?.Code === 'cm');
-  log('WATHTE/NAP/cm messageID:', wathteNap?.AquoMetadata_MessageID);
-} catch (e) { log('FOUT', e.message); }
-
-// --- 3. DD-API tijdreeks met een echte code
-log('\n' + '='.repeat(70), '\n# DD-API OphalenWaarnemingen lobith.bovenrijn.haven');
-const isoNu = new Date(), iso6 = new Date(Date.now() - 6 * 3600e3);
-const f = (d) => d.toISOString().replace('Z', '+00:00');
-try {
-  const r = await fetch('https://ddapi20-waterwebservices.rijkswaterstaat.nl/ONLINEWAARNEMINGENSERVICES/OphalenWaarnemingen',
-    post({
-      Locatie: { Code: 'lobith.bovenrijn.haven' },
-      AquoPlusWaarnemingMetadata: { AquoMetadata: { Eenheid: { Code: 'cm' }, Grootheid: { Code: 'WATHTE' }, Hoedanigheid: { Code: 'NAP' } } },
-      Periode: { Begindatumtijd: f(iso6), Einddatumtijd: f(isoNu) },
-    }));
-  const t = await r.text();
-  log('status', r.status);
-  log(clip(t, 2500));
-} catch (e) { log('FOUT', e.message); }
-
-// --- 4. kandidaat-verwachtingsparameters op waterinfo
-for (const p of ['waterhoogte-verwacht', 'waterhoogteverwachting', 'waterhoogte_verwacht', 'astronomische-getij', 'waterafvoer-verwacht']) {
-  try {
-    const r = await fetch(`https://waterinfo.rws.nl/api/point/latestmeasurement?parameterid=${p}`);
-    const t = await r.text();
-    log(`\n# parameterid=${p} -> ${r.status} ${clip(t, 300)}`);
-  } catch (e) { log(p, 'FOUT', e.message); }
+const ids = {};
+for (const a of cat.AquoMetadataLijst) {
+  if (a.Grootheid?.Code === 'WATHTE' && a.Hoedanigheid?.Code === 'NAP' && a.Eenheid?.Code === 'cm')
+    ids[a.ProcesType || a.Procestype || '?'] = a.AquoMetadata_MessageID;
+  if (a.Grootheid?.Code === 'Q' && a.Eenheid?.Code === 'm3/s') ids['Q_' + (a.ProcesType || '?')] = a.AquoMetadata_MessageID;
 }
+log('WATHTE/NAP/cm ids per procestype:', JSON.stringify(ids));
+
+const locById = new Map(cat.LocatieLijst.map(l => [l.Locatie_MessageID, l]));
+const per = {};
+for (const k of Object.keys(ids)) per[k] = [];
+for (const koppel of cat.AquoMetadataLocatieLijst) {
+  for (const [k, id] of Object.entries(ids)) if (koppel.AquoMetaData_MessageID === id) {
+    const l = locById.get(koppel.Locatie_MessageID); if (l) per[k].push(l);
+  }
+}
+for (const [k, v] of Object.entries(per)) log(`locaties met ${k}: ${v.length}`);
+log('voorbeeld meting:', JSON.stringify(per['meting']?.slice(0, 3)));
+log('voorbeeld verwachting:', JSON.stringify(per['verwachting']?.slice(0, 6)));
+log('alle verwachting-namen:', (per['verwachting'] || []).map(l => l.Code).join(', '));
+
+// verwachting daadwerkelijk ophalen
+const f = (d) => d.toISOString().replace('Z', '+00:00');
+for (const code of (per['verwachting'] || []).slice(0, 3).map(l => l.Code)) {
+  const r = await fetch(BASE + '/ONLINEWAARNEMINGENSERVICES/OphalenWaarnemingen', post({
+    Locatie: { Code: code },
+    AquoPlusWaarnemingMetadata: { AquoMetadata: { Eenheid: { Code: 'cm' }, Grootheid: { Code: 'WATHTE' }, Hoedanigheid: { Code: 'NAP' }, ProcesType: 'verwachting' } },
+    Periode: { Begindatumtijd: f(new Date(Date.now() - 3600e3)), Einddatumtijd: f(new Date(Date.now() + 10 * 24 * 3600e3)) },
+  }));
+  const t = await r.text();
+  let n = 0, eerste = '', laatste = '';
+  try { const j = JSON.parse(t); const m = j.WaarnemingenLijst?.[0]?.MetingenLijst || []; n = m.length; eerste = m[0]?.Tijdstip; laatste = m.at(-1)?.Tijdstip; log(`\nverwachting ${code}: status ${r.status}, reeksen ${j.WaarnemingenLijst?.length}, punten ${n}, van ${eerste} tot ${laatste}`); if (!n) log(clip(t, 700)); }
+  catch { log(code, r.status, clip(t, 500)); }
+}
+
+// bulk laatste waarnemingen
+const codes = (per['meting'] || []).slice(0, 5).map(l => ({ Code: l.Code }));
+const r2 = await fetch(BASE + '/ONLINEWAARNEMINGENSERVICES/OphalenLaatsteWaarnemingen', post({
+  AquoPlusWaarnemingMetadataLijst: [{ AquoMetadata: { Compartiment: { Code: 'OW' }, Eenheid: { Code: 'cm' }, Grootheid: { Code: 'WATHTE' }, Hoedanigheid: { Code: 'NAP' } } }],
+  LocatieLijst: codes,
+}));
+log('\nlaatste waarnemingen bulk status', r2.status, clip(await r2.text(), 1500));
