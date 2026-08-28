@@ -82,33 +82,48 @@ const leesJaar = async (code, jaar) => {
   catch { return null; }
 };
 
+// Hoe ver elk meetpunt afzonderlijk al terugloopt. Dat moet per meetpunt, niet over het
+// archief als geheel: een gericht aangevuld meetpunt zou anders de indruk wekken dat alle
+// andere meetpunten ook al diep genoeg zijn, waarna die nooit meer worden aangevuld.
+const oudsteJaarPerCode = new Map();
 let aanwezigeJaren = [];
 if (existsSync(ARCHIEF)) {
   aanwezigeJaren = (await readdir(ARCHIEF, { withFileTypes: true }))
     .filter((d) => d.isDirectory() && /^\d{4}$/.test(d.name))
     .map((d) => Number(d.name))
     .sort((a, b) => a - b);
+  for (const jaar of aanwezigeJaren) {
+    for (const bestand of await readdir(new URL(`${jaar}/`, ARCHIEF))) {
+      if (!bestand.endsWith('.json')) continue;
+      const code = bestand.slice(0, -5);
+      if (!oudsteJaarPerCode.has(code)) oudsteJaarPerCode.set(code, jaar);
+    }
+  }
 }
-console.log(`Aanwezig: ${aanwezigeJaren.length ? aanwezigeJaren.join(', ') : 'nog niets'}`);
+console.log(`Aanwezig: ${aanwezigeJaren.length ? aanwezigeJaren.join(', ') : 'nog niets'}` +
+  ` voor ${oudsteJaarPerCode.size} meetpunten`);
 
 // ------------------------------------------------------ te vullen periode bepalen
 
 // Vooruit: de laatste dagen altijd opnieuw, want metingen worden later nog gecontroleerd.
 const vooruitVanaf = eindeArchief - 5 * DAG;
 
-// Terug: verder dan wat er al is. Bij een gerichte aanvulling telt alleen het doel.
-let terugVanaf = null, terugTot = null;
-const oudsteAanwezig = aanwezigeJaren.length && !ALLEEN.length ? jaarBegin(aanwezigeJaren[0]) : null;
-const startpunt = oudsteAanwezig ?? vooruitVanaf;
-if (startpunt > doelBegin) {
-  terugTot = startpunt;
-  terugVanaf = Math.max(doelBegin, terugTot - STAP_DAGEN * DAG);
+// Terug: per meetpunt verder dan wat er voor dat meetpunt al is.
+function periodenVoor(code) {
+  const perioden = [{ naam: 'vooruit', vanaf: vooruitVanaf, tot: eindeArchief }];
+  const oudsteJaar = oudsteJaarPerCode.get(code);
+  const startpunt = oudsteJaar != null ? jaarBegin(oudsteJaar) : vooruitVanaf;
+  if (startpunt > doelBegin) {
+    const terugTot = startpunt;
+    const terugVanaf = Math.max(doelBegin, terugTot - STAP_DAGEN * DAG);
+    if (terugTot > terugVanaf) perioden.push({ naam: 'terug', vanaf: terugVanaf, tot: terugTot });
+  }
+  return perioden;
 }
 
-const perioden = [{ naam: 'vooruit', vanaf: vooruitVanaf, tot: eindeArchief }];
-if (terugVanaf != null && terugTot > terugVanaf) perioden.push({ naam: 'terug', vanaf: terugVanaf, tot: terugTot });
-for (const p of perioden) console.log(`  ${p.naam}: ${datum(p.vanaf)} tot ${datum(p.tot)}`);
-if (terugVanaf == null) console.log('  De gewenste diepte is bereikt; alleen bijwerken.');
+const nogAanvullen = stations.filter((c) => periodenVoor(c).length > 1);
+console.log(`  ${nogAanvullen.length} meetpunten worden verder terug aangevuld, ` +
+  `${stations.length - nogAanvullen.length} zijn al diep genoeg.`);
 
 // --------------------------------------------------- ophalen en per dag samenvatten
 
@@ -128,7 +143,7 @@ let mislukt = 0;
 
 async function verwerk(code) {
   const dagen = new Map();
-  for (const periode of perioden) {
+  for (const periode of periodenVoor(code)) {
     // In stukken van hoogstens 60 dagen, zodat elk antwoord hanteerbaar blijft.
     for (let start = periode.vanaf; start < periode.tot; start += 60 * DAG) {
       const eind = Math.min(periode.tot, start + 60 * DAG);
