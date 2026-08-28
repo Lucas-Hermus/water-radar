@@ -9,11 +9,15 @@ on:
       stap_dagen:
         description: 'Hoeveel dagen er deze beurt verder terug wordt opgehaald'
         required: false
-        default: '30'
+        default: '365'
       diepte_dagen:
         description: 'Hoe ver het archief uiteindelijk terug moet lopen'
         required: false
-        default: '730'
+        default: '2200'
+      alleen_codes:
+        description: 'Alleen deze meetpunten (komma-gescheiden), voor een gerichte aanvulling'
+        required: false
+        default: ''
 
 permissions:
   contents: write
@@ -35,8 +39,9 @@ jobs:
 
       - name: Archief ophalen en bijwerken
         env:
-          ARCHIEF_STAP_DAGEN: ${{ inputs.stap_dagen || '30' }}
-          ARCHIEF_DIEPTE_DAGEN: ${{ inputs.diepte_dagen || '730' }}
+          ARCHIEF_STAP_DAGEN: ${{ inputs.stap_dagen || '365' }}
+          ARCHIEF_DIEPTE_DAGEN: ${{ inputs.diepte_dagen || '2200' }}
+          ARCHIEF_ALLEEN_CODES: ${{ inputs.alleen_codes || '' }}
         run: node tools/archief.mjs
 
       - name: Wijzigingen vastleggen

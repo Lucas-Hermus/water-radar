@@ -25,8 +25,8 @@ op GitHub Pages.
 - **Doorrekenen naar benedenstrooms.** Voor meetpunten waarvoor Rijkswaterstaat zelf geen
   verwachting publiceert, wordt de verandering bovenstrooms overgenomen — vertraagd met de
   looptijd en geschaald met de doorwerking, beide berekend uit de meetreeksen.
-- **Terug in de tijd.** Kies een datum en tijd en zie hoe hoog het water toen stond, met
-  daarbij alle perioden waarin het water bij dat meetpunt boven het gekozen maaiveld uitkwam.
+- **Terug in de tijd.** Kies een datum en zie tussen welke standen het water die dag stond,
+  met daarbij alle perioden waarin het water bij dat meetpunt boven het gekozen maaiveld uitkwam.
 - **Landelijk beeld.** Alle actieve meetpunten op de kaart, met de klasse-indeling van
   Rijkswaterstaat, plus een overzicht van de sterkste stijgingen.
 
@@ -73,23 +73,36 @@ actuele waterberichtgeving [waterinfo.rws.nl](https://waterinfo.rws.nl/).
 
 ## Het meetarchief
 
-Rijkswaterstaat bewaart de metingen per tien minuten en levert ze desgevraagd jaren terug,
-maar een jaar aan data is ongeveer 15 MB per meetpunt. Alles in een keer ophalen zou
-onbeleefd zijn tegenover een openbare dienst. Het archief groeit daarom stapsgewijs: elke
-nacht worden de laatste dagen bijgewerkt en wordt er een stuk verder terug opgehaald, tot de
-ingestelde diepte (standaard twee jaar) bereikt is. Op de site staat altijd tot welke datum
-het archief loopt.
+De browser kan de WaterWebservices niet zelf bevragen: Rijkswaterstaat stuurt geen
+CORS-headers mee, ook niet bij een aanvraag met `Origin` en ook niet op de preflight.
+(PDOK doet dat wel, daarom werken het adres zoeken en de maaiveldhoogte wel rechtstreeks.)
+Alles wat de site aan waterdata nodig heeft, moet dus vooraf klaarstaan.
 
-Per uur worden de hoogste en de laagste meting bewaard. Voor de vraag of het water ooit boven
-het maaiveld stond is de piek binnen het uur bepalend, en bij getijdenwater laat de
-onderkant de andere kant van de golf zien.
+Rijkswaterstaat levert de metingen per tien minuten en bewaart ze meer dan tien jaar, maar
+één jaar aan tienminutenwaarden is ruwweg 15 MB per meetpunt. Dat in de repository zetten
+zou voor alle meetpunten over meerdere jaren op tientallen gigabytes uitkomen.
 
-Losse maandbestanden staan in `archief/` in de repository; afgeronde maanden veranderen daarna
-niet meer. Bij het publiceren worden ze samengevoegd tot één bestand per meetpunt, dat de
-browser pas ophaalt zodra je een meetpunt bekijkt.
+Het archief bewaart daarom **per dag alleen de hoogste en de laagste gemeten stand**. Dat is
+precies wat de vraag "stond het water hier ooit boven mijn maaiveld" nodig heeft, en het kost
+ongeveer 4 kB per meetpunt per jaar: alle meetpunten samen over zes jaar blijven onder de tien
+megabyte. De browser haalt bovendien alleen het bestand op van het meetpunt dat je bekijkt —
+zo'n 20 kB voor het hele archief van dat punt.
 
-Sneller opbouwen kan met de hand: start de workflow *Meetarchief bijwerken* met een grotere
-waarde voor `stap_dagen`.
+Wat er niet in zit, is het verloop binnen een dag van lang geleden. Voor de afgelopen dertig
+uur staat het verloop wel in de actuele momentopname.
+
+Opslag is één bestand per meetpunt per jaar in `archief/`. Afgesloten jaren veranderen daarna
+niet meer, dus de nachtelijke bijwerking raakt alleen het lopende jaar.
+
+Het ophalen zelf blijft zwaar: om een dagwaarde te kunnen berekenen moeten de
+tienminutenwaarden wel binnengehaald worden. Het archief groeit daarom stapsgewijs, elke nacht
+een stuk verder terug, tot de ingestelde diepte (standaard ruim zes jaar) bereikt is. Op de
+site staat altijd tot welke datum het archief loopt, en bereiken die verder teruggaan dan dat
+staan uit in plaats van stilletjes hetzelfde te tonen.
+
+Sneller of gerichter opbouwen kan met de hand via de workflow *Meetarchief bijwerken*:
+`stap_dagen` bepaalt hoeveel er per beurt bij komt, `alleen_codes` beperkt het tot een paar
+meetpunten.
 
 ## Techniek
 
@@ -99,7 +112,7 @@ site/                    de statische website (geen bouwstap, geen afhankelijkhe
   stijl.css
   app.js
   data/                  wordt bij elke publicatie gegenereerd
-archief/                 de meetgeschiedenis, per maand per meetpunt (wel vastgelegd)
+archief/                 de meetgeschiedenis: per meetpunt per jaar de dagwaarden
 tools/
   rws.mjs                gedeelde toegang tot de WaterWebservices
   netwerk.mjs            welke meetpunten stroomopwaarts van welke liggen

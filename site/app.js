@@ -403,6 +403,65 @@ function toonMeetpuntFeiten(station, dichtstbij, soortVerwachting, hoogsteVerwac
 
 /* ---------------------------------------------------------------- grafiek */
 
+/* Kiest markeringen voor de tijdas die passen bij de lengte van de reeks: uren bij een
+   paar dagen, maanden bij een jaar, jaren bij een archief van jaren. */
+function tijdMarkeringen(tMin, tMax, streefAantal) {
+  const merken = [];
+  const spanDagen = (tMax - tMin) / 86400000;
+  const kort = (d, opties) => d.toLocaleDateString('nl-NL', opties);
+
+  if (spanDagen <= 4) {
+    const stapUren = spanDagen <= 1.5 ? 6 : 12;
+    const stap = stapUren * 3600000;
+    for (let t = Math.ceil(tMin / stap) * stap; t <= tMax; t += stap) {
+      const d = new Date(t);
+      const middernacht = d.getHours() === 0;
+      merken.push({
+        t, sterk: middernacht, label: tijdTekst(d),
+        onder: middernacht ? kort(d, { day: 'numeric', month: 'short' }) : null,
+      });
+    }
+    return merken;
+  }
+
+  if (spanDagen <= 70) {
+    const stapDagen = Math.max(1, Math.round(spanDagen / streefAantal));
+    const stap = stapDagen * 86400000;
+    for (let t = Math.ceil(tMin / stap) * stap; t <= tMax; t += stap) {
+      merken.push({ t, sterk: false, label: kort(new Date(t), { day: 'numeric', month: 'short' }) });
+    }
+    return merken;
+  }
+
+  const spanMaanden = spanDagen / 30.44;
+  if (spanMaanden <= 30) {
+    const stapMaanden = Math.max(1, Math.round(spanMaanden / streefAantal));
+    const eerste = new Date(tMin);
+    const cursor = new Date(Date.UTC(eerste.getUTCFullYear(), eerste.getUTCMonth(), 1));
+    while (cursor.getTime() < tMin) cursor.setUTCMonth(cursor.getUTCMonth() + 1);
+    while (cursor.getTime() <= tMax) {
+      const januari = cursor.getUTCMonth() === 0;
+      merken.push({
+        t: cursor.getTime(), sterk: januari,
+        label: kort(cursor, { month: 'short' }),
+        onder: januari || merken.length === 0 ? String(cursor.getUTCFullYear()) : null,
+      });
+      cursor.setUTCMonth(cursor.getUTCMonth() + stapMaanden);
+    }
+    return merken;
+  }
+
+  const spanJaren = spanDagen / 365.25;
+  const stapJaren = Math.max(1, Math.round(spanJaren / streefAantal));
+  const cursor = new Date(Date.UTC(new Date(tMin).getUTCFullYear(), 0, 1));
+  while (cursor.getTime() < tMin) cursor.setUTCFullYear(cursor.getUTCFullYear() + 1);
+  while (cursor.getTime() <= tMax) {
+    merken.push({ t: cursor.getTime(), sterk: true, label: String(cursor.getUTCFullYear()) });
+    cursor.setUTCFullYear(cursor.getUTCFullYear() + stapJaren);
+  }
+  return merken;
+}
+
 const laatsteGrafieken = new Map();
 
 function tekenGrafiek(opties) {
@@ -468,25 +527,21 @@ function tekenGrafiek(opties) {
   svg.append(asTitel);
 
   // dagscheiding en tijdlabels
-  const spanUren = (tMax - tMin) / 3600000;
-  const stapUren = spanUren > 24 * 40 ? 24 * 14 : spanUren > 24 * 7 ? 24 * 2 : spanUren > 24 * 2 ? (smal ? 24 : 12) : smal ? 12 : 6;
-  const stapMs = stapUren * 3600000;
-  for (let t = Math.ceil(tMin / stapMs) * stapMs; t <= tMax; t += stapMs) {
-    const xx = x(t);
-    const datum = new Date(t);
-    const middernacht = datum.getHours() === 0;
-    svg.append(ns('line', { x1: xx, x2: xx, y1: marge.boven, y2: marge.boven + by, stroke: 'currentColor', 'stroke-opacity': middernacht ? .2 : .07 }));
-    if (xx < marge.links + 8 || xx > B - marge.rechts - 8) continue;
-    const langeReeks = stapUren >= 24;
-    const label = ns('text', { x: xx, y: H - (langeReeks ? 12 : 22), 'text-anchor': 'middle', 'font-size': tekst, fill: 'currentColor', 'fill-opacity': .7 });
-    label.textContent = langeReeks
-      ? datum.toLocaleDateString('nl-NL', { day: 'numeric', month: 'short' })
-      : tijdTekst(datum);
+  // De tijdas moet bij elk bereik leesbaar blijven: van een paar uur tot vele jaren.
+  for (const merk of tijdMarkeringen(tMin, tMax, smal ? 4 : 8)) {
+    const xx = x(merk.t);
+    svg.append(ns('line', {
+      x1: xx, x2: xx, y1: marge.boven, y2: marge.boven + by,
+      stroke: 'currentColor', 'stroke-opacity': merk.sterk ? .2 : .07,
+    }));
+    if (xx < marge.links + 10 || xx > B - marge.rechts - 10) continue;
+    const label = ns('text', { x: xx, y: H - 22, 'text-anchor': 'middle', 'font-size': tekst, fill: 'currentColor', 'fill-opacity': .7 });
+    label.textContent = merk.label;
     svg.append(label);
-    if (middernacht && !langeReeks) {
-      const dagLabel = ns('text', { x: xx, y: H - 6, 'text-anchor': 'middle', 'font-size': tekst - 1, fill: 'currentColor', 'fill-opacity': .55 });
-      dagLabel.textContent = datum.toLocaleDateString('nl-NL', { day: 'numeric', month: 'short' });
-      svg.append(dagLabel);
+    if (merk.onder) {
+      const tweede = ns('text', { x: xx, y: H - 7, 'text-anchor': 'middle', 'font-size': tekst - 1, fill: 'currentColor', 'fill-opacity': .55 });
+      tweede.textContent = merk.onder;
+      svg.append(tweede);
     }
   }
 
@@ -553,7 +608,7 @@ function tekenGrafiek(opties) {
     s.append(i, document.createTextNode(tekst));
     return s;
   };
-  if (band?.length) legenda.append(item('#0d6b73', 'gemeten hoogste en laagste stand per uur'));
+  if (band?.length) legenda.append(item('#0d6b73', 'gemeten hoogste en laagste stand per dag'));
   if (meting?.length) legenda.append(item('#0d6b73', 'gemeten waterstand'));
   if (verwachting?.length) {
     legenda.append(item('#0b8a7a',
@@ -661,7 +716,7 @@ function toonBerekening(station, adres, soortVerwachting) {
 /* ------------------------------------------------------------ geschiedenis */
 
 const archief = { index: null, reeksen: new Map() };
-let geschiedenisStand = { station: null, maaiveld: null, uren: 168, moment: null };
+let geschiedenisStand = { station: null, maaiveld: null, dagen: 365, moment: null };
 
 async function haalArchiefIndex() {
   if (archief.index) return archief.index;
@@ -685,14 +740,38 @@ async function haalArchief(code) {
   return reeks;
 }
 
+const DAG = 86400000;
+
+/* Zet de knoppen uit die verder terug reiken dan het archief, zodat het niet lijkt
+   alsof er niets gebeurt bij het aanklikken. */
+function stelKnoppenIn(reeks) {
+  const spanDagen = (reeks.at(-1).t - reeks[0].t) / DAG + 1;
+  let ruimste = 0;
+  for (const knop of document.querySelectorAll('.knoppenrij button')) {
+    const dagen = Number(knop.dataset.dagen);
+    const teLang = dagen > 0 && dagen > spanDagen * 1.02;
+    knop.disabled = teLang;
+    knop.title = teLang
+      ? `Het archief gaat nu ${Math.round(spanDagen)} dagen terug, dus dit bereik is nog niet beschikbaar.`
+      : '';
+    if (!teLang && dagen > ruimste) ruimste = dagen;
+  }
+  // Staat er een uitgeschakeld bereik aan, val dan terug op het ruimste dat wel kan.
+  const huidig = geschiedenisStand.dagen;
+  if (huidig > 0 && huidig > spanDagen * 1.02) geschiedenisStand.dagen = ruimste || 0;
+  for (const knop of document.querySelectorAll('.knoppenrij button')) {
+    knop.classList.toggle('actief', Number(knop.dataset.dagen) === geschiedenisStand.dagen);
+  }
+  return spanDagen;
+}
+
 /* Zoekt de perioden waarin het water boven een grens uitkwam. Uren die binnen een
    etmaal van elkaar liggen horen bij dezelfde periode: als het water rond het maaiveld
    schommelt is dat één hoogwater, geen tientallen losse gevallen. Heel korte en heel
    kleine overschrijdingen worden niet als aparte periode geteld, want die liggen binnen
    de meetnauwkeurigheid en binnen de spreiding van de maaiveldhoogte. */
-const SAMENVOEGGAT = 24 * 3600000;
-const MINSTE_DUUR = 2 * 3600000;
-const MINSTE_HOOGTE = 0.05;
+const SAMENVOEGGAT = 2 * 86400000;   // losse dagen binnen twee etmalen horen bij één hoogwater
+const MINSTE_HOOGTE = 0.02;
 
 function zoekOverschrijdingen(reeks, grensMeter) {
   const ruw = [];
@@ -709,7 +788,7 @@ function zoekOverschrijdingen(reeks, grensMeter) {
     }
   }
   if (huidig) ruw.push(huidig);
-  return ruw.filter((g) => g.eind - g.begin >= MINSTE_DUUR || g.piek - grensMeter >= MINSTE_HOOGTE);
+  return ruw.filter((g) => g.piek - grensMeter >= MINSTE_HOOGTE);
 }
 
 async function toonGeschiedenis(station, maaiveld) {
@@ -723,6 +802,7 @@ async function toonGeschiedenis(station, maaiveld) {
     uitleg.textContent =
       'Het meetarchief voor dit meetpunt wordt nog opgebouwd. Het vult zich elke nacht verder aan ' +
       'met oudere metingen van Rijkswaterstaat; kom later terug om verder terug te kunnen kijken.';
+    el('archiefdiepte').textContent = '';
     el('geschiedenisgrafiek').replaceChildren();
     el('geschiedenislegenda').replaceChildren();
     el('overstromingen').replaceChildren();
@@ -739,24 +819,31 @@ async function toonGeschiedenis(station, maaiveld) {
   el('moment').disabled = false;
   const van = new Date(reeks[0].t), tot = new Date(reeks.at(-1).t);
   uitleg.textContent =
-    `Het archief van ${station.n} loopt van ${datumTekst(van)} tot ${datumTekst(tot)} en bevat per uur ` +
-    'de hoogste en de laagste gemeten stand. Kies een moment of een periode om terug te kijken.';
+    `Het archief van ${station.n} bevat per dag de hoogste en de laagste gemeten stand. ` +
+    'Kies een datum of een periode om terug te kijken.';
+
+  const spanDagen = stelKnoppenIn(reeks);
+  const jaren = spanDagen / 365;
+  el('archiefdiepte').textContent =
+    `Beschikbaar van ${datumTekst(van)} tot ${datumTekst(tot)} — ` +
+    (jaren >= 1 ? `ruim ${Math.floor(jaren)} jaar` : `${Math.round(spanDagen)} dagen`) +
+    '. Het archief groeit elke nacht verder terug; bereiken die verder gaan dan dit staan uit.';
 
   const invoer = el('moment');
-  invoer.min = naarInvoerTijd(van);
-  invoer.max = naarInvoerTijd(tot);
+  invoer.min = naarInvoerDatum(van);
+  invoer.max = naarInvoerDatum(tot);
   if (!geschiedenisStand.moment) {
     geschiedenisStand.moment = Math.min(Date.now(), reeks.at(-1).t);
-    invoer.value = naarInvoerTijd(new Date(geschiedenisStand.moment));
+    invoer.value = naarInvoerDatum(new Date(geschiedenisStand.moment));
   }
 
   tekenGeschiedenis();
   toonOverstromingen(reeks, maaiveld, station);
 }
 
-function naarInvoerTijd(datum) {
+function naarInvoerDatum(datum) {
   const p = (n) => String(n).padStart(2, '0');
-  return `${datum.getFullYear()}-${p(datum.getMonth() + 1)}-${p(datum.getDate())}T${p(datum.getHours())}:${p(datum.getMinutes())}`;
+  return `${datum.getFullYear()}-${p(datum.getMonth() + 1)}-${p(datum.getDate())}`;
 }
 
 function datumTekst(datum) {
@@ -764,16 +851,23 @@ function datumTekst(datum) {
 }
 
 function tekenGeschiedenis() {
-  const { station, maaiveld, uren, moment } = geschiedenisStand;
+  const { station, maaiveld, dagen, moment } = geschiedenisStand;
   if (!station) return;
   const reeks = archief.reeksen.get(station.c);
   if (!reeks?.length) return;
 
   let venster = reeks;
-  if (uren > 0) {
-    const halve = (uren / 2) * 3600000;
-    venster = reeks.filter((p) => p.t >= moment - halve && p.t <= moment + halve);
-    if (venster.length < 3) venster = reeks.slice(-Math.min(reeks.length, uren));
+  if (dagen > 0) {
+    // Het venster ligt rond het gekozen moment, maar schuift naar binnen als het buiten
+    // het archief zou vallen. Anders zou 'vijf jaar' rond vandaag maar de helft tonen,
+    // omdat de andere helft in de toekomst ligt.
+    const halve = (dagen / 2) * DAG;
+    const eerste = reeks[0].t, laatste = reeks.at(-1).t;
+    let van = moment - halve, tot = moment + halve;
+    if (tot > laatste) { van = Math.max(eerste, van - (tot - laatste)); tot = laatste; }
+    if (van < eerste) { tot = Math.min(laatste, tot + (eerste - van)); van = eerste; }
+    venster = reeks.filter((p) => p.t >= van && p.t <= tot);
+    if (venster.length < 3) venster = reeks;
   }
 
   tekenGrafiek({
@@ -787,16 +881,16 @@ function tekenGeschiedenis() {
     leegTekst: 'Voor deze periode staan er geen metingen in het archief.',
   });
 
-  // Wat stond het water op het gekozen moment?
+  // Wat stond het water op de gekozen dag?
   const dichtstbij = reeks.reduce((beste, p) =>
     Math.abs(p.t - moment) < Math.abs(beste.t - moment) ? p : beste, reeks[0]);
   const regel = el('momentwaarde');
-  if (Math.abs(dichtstbij.t - moment) > 6 * 3600000) {
-    regel.textContent = 'Voor het gekozen moment staat er niets in het archief.';
+  if (Math.abs(dichtstbij.t - moment) > 1.5 * DAG) {
+    regel.textContent = 'Voor de gekozen datum staat er niets in het archief.';
     return;
   }
   const stukken = [
-    `Op ${datumTijdTekst(new Date(dichtstbij.t))} stond het water tussen ${meter(dichtstbij.lo)} en ` +
+    `Op ${datumTekst(new Date(dichtstbij.t))} stond het water tussen ${meter(dichtstbij.lo)} en ` +
     `${meter(dichtstbij.hi)} NAP`,
   ];
   if (maaiveld != null) {
@@ -836,25 +930,27 @@ function toonOverstromingen(reeks, maaiveld, station) {
   kop.textContent =
     `Sinds ${van} kwam het water bij ${station.n} ${gebeurtenissen.length === 1 ? 'één keer' : gebeurtenissen.length + ' keer'} ` +
     `boven uw maaiveld van ${meter(maaiveld)} NAP. De hoogste stand in het hele archief was ` +
-    `${meter(hoogste.hi)} NAP op ${datumTijdTekst(new Date(hoogste.t))}, ` +
+    `${meter(hoogste.hi)} NAP op ${datumTekst(new Date(hoogste.t))}, ` +
     `${meter(hoogste.hi - maaiveld)} boven het maaiveld.`;
   bak.append(kop);
 
   const lijst = maakEl('ul', 'gebeurtenissen');
   for (const g of [...gebeurtenissen].reverse().slice(0, 12)) {
     const item = maakEl('li');
-    const duurUren = (g.eind - g.begin) / 3600000 + 1;
-    item.append(maakEl('b', null, datumTijdTekst(new Date(g.begin))));
+    const dagenLang = Math.round((g.eind - g.begin) / DAG) + 1;
+    item.append(maakEl('b', null, dagenLang === 1
+      ? datumTekst(new Date(g.begin))
+      : `${datumTekst(new Date(g.begin))} tot ${datumTekst(new Date(g.eind))}`));
     item.append(document.createTextNode(
-      `duurde ${duurTekst(duurUren)} en kwam tot ${meter(g.piek)} NAP, ` +
+      `${dagenLang === 1 ? 'één dag' : dagenLang + ' dagen'}, hoogste stand ${meter(g.piek)} NAP, ` +
       `${meter(g.piek - maaiveld)} boven het maaiveld`));
     item.append(maakEl('br'));
     const knop = maakEl('button', 'tekstknop', 'Bekijk deze periode');
     knop.type = 'button';
     knop.addEventListener('click', () => {
       geschiedenisStand.moment = g.piekTijd;
-      el('moment').value = naarInvoerTijd(new Date(g.piekTijd));
-      kiesBereik(168);
+      el('moment').value = naarInvoerDatum(new Date(g.piekTijd));
+      kiesBereik(31);
       el('geschiedenisgrafiek').scrollIntoView({ behavior: 'smooth', block: 'center' });
     });
     item.append(knop);
@@ -866,10 +962,10 @@ function toonOverstromingen(reeks, maaiveld, station) {
   }
 }
 
-function kiesBereik(uren) {
-  geschiedenisStand.uren = uren;
+function kiesBereik(dagen) {
+  geschiedenisStand.dagen = dagen;
   for (const knop of document.querySelectorAll('.knoppenrij button')) {
-    knop.classList.toggle('actief', Number(knop.dataset.uren) === uren);
+    knop.classList.toggle('actief', Number(knop.dataset.dagen) === dagen);
   }
   tekenGeschiedenis();
 }
@@ -880,7 +976,7 @@ function koppelGeschiedenis() {
     if (Number.isFinite(gekozen)) { geschiedenisStand.moment = gekozen; tekenGeschiedenis(); }
   });
   for (const knop of document.querySelectorAll('.knoppenrij button')) {
-    knop.addEventListener('click', () => kiesBereik(Number(knop.dataset.uren)));
+    knop.addEventListener('click', () => kiesBereik(Number(knop.dataset.dagen)));
   }
 }
 

@@ -70,17 +70,18 @@
         en of het water sinds het begin van het archief ooit boven uw maaiveld is uitgekomen.</p>
       <div class="tijdbalk">
         <div class="tijdveld">
-          <label for="moment">Datum en tijd</label>
-          <input id="moment" type="datetime-local" step="3600">
+          <label for="moment">Datum</label>
+          <input id="moment" type="date">
         </div>
-        <div class="knoppenrij" role="group" aria-label="Hoeveel tijd rond dat moment">
-          <button type="button" data-uren="24">1 dag</button>
-          <button type="button" data-uren="168" class="actief">1 week</button>
-          <button type="button" data-uren="744">1 maand</button>
-          <button type="button" data-uren="8760">1 jaar</button>
-          <button type="button" data-uren="0">Alles</button>
+        <div class="knoppenrij" role="group" aria-label="Hoeveel tijd rond die datum">
+          <button type="button" data-dagen="31">1 maand</button>
+          <button type="button" data-dagen="92">3 maanden</button>
+          <button type="button" data-dagen="365" class="actief">1 jaar</button>
+          <button type="button" data-dagen="1826">5 jaar</button>
+          <button type="button" data-dagen="0">Alles</button>
         </div>
       </div>
+      <p id="archiefdiepte" class="hulp"></p>
       <p id="momentwaarde" class="momentwaarde"></p>
       <div id="geschiedenisgrafiek" class="grafiek"></div>
       <div id="geschiedenislegenda" class="legenda"></div>
