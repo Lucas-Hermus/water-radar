@@ -297,11 +297,20 @@ function ijkRelatie(bovenReeks, benedenReeks, { minUur = 0, maxUur = 24 } = {}) 
     const a = k >= 0 ? dBoven.slice(0, dBoven.length - k) : dBoven.slice(-k);
     const b = k >= 0 ? dBeneden.slice(k) : dBeneden.slice(0, dBeneden.length + k);
     const c = correlatie(a, b);
-    if (c && (!beste || Math.abs(c.r) > Math.abs(beste.r))) beste = { ...c, vertragingUur: (k * STAP) / UUR };
+    // Alleen een positief verband is fysisch zinnig: water dat bovenstrooms stijgt,
+    // laat benedenstrooms het water stijgen. Bij getijdenwater levert het zoeken naar
+    // de sterkste samenhang anders de tegenfase van het getij op, een halve golf ernaast.
+    if (c && c.r > 0 && (!beste || c.r > beste.r)) beste = { ...c, stap: k };
   }
   if (!beste) return null;
+
+  // Ligt het optimum op de rand van het doorzochte bereik, dan is de werkelijke
+  // verschuiving waarschijnlijk groter en is deze uitkomst niet te vertrouwen.
+  const opDeRand = beste.stap === maxStap || (minStap < 0 && beste.stap === minStap);
+  if (opDeRand) return null;
+
   return {
-    vertragingUur: Number(beste.vertragingUur.toFixed(2)),
+    vertragingUur: Number(((beste.stap * STAP) / UUR).toFixed(2)),
     versterking: Number(beste.helling.toFixed(3)),
     correlatie: Number(beste.r.toFixed(3)),
     punten: beste.n,
@@ -398,7 +407,7 @@ for (const code of zonder) {
 
   let beste = null;
   for (const kandidaat of kandidaten) {
-    const ijking = ijkRelatie(metingen.get(kandidaat.bron), eigen, { minUur: -12, maxUur: 12 });
+    const ijking = ijkRelatie(metingen.get(kandidaat.bron), eigen, { minUur: -6, maxUur: 6 });
     if (!ijking) continue;
     if (Math.abs(ijking.versterking) < 0.1 || Math.abs(ijking.versterking) > 3) continue;
     if (!beste || ijking.correlatie > beste.ijking.correlatie) beste = { ...kandidaat, ijking };
