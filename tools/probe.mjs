@@ -1,91 +1,61 @@
-// Probe: verifieert welke publieke endpoints bruikbaar zijn en hoe hun antwoord eruitziet.
-const OUT = [];
-const log = (...a) => { const s = a.join(' '); OUT.push(s); console.log(s); };
+// Probe ronde 2: verwachtingen, stationcatalogus en klasse-indeling.
+const log = (...a) => console.log(...a);
+const clip = (s, n = 1800) => { s = typeof s === 'string' ? s : JSON.stringify(s); return s.length > n ? s.slice(0, n) + `\n…[${s.length}]` : s; };
 
-function clip(s, n = 2500) {
-  s = typeof s === 'string' ? s : JSON.stringify(s);
-  return s.length > n ? s.slice(0, n) + `\n…[${s.length} tekens totaal]` : s;
-}
-
-async function probe(name, url, opts = {}) {
-  log('\n' + '='.repeat(70));
-  log('PROBE:', name);
-  log('URL:', url);
+async function get(name, url, opts = {}) {
+  log('\n' + '='.repeat(70), '\n#', name, '\n', url);
   try {
-    const t0 = Date.now();
-    const res = await fetch(url, { ...opts, signal: AbortSignal.timeout(60000) });
-    log('status:', res.status, res.statusText, `(${Date.now() - t0}ms)`);
-    log('content-type:', res.headers.get('content-type'));
-    log('access-control-allow-origin:', res.headers.get('access-control-allow-origin'));
-    const txt = await res.text();
-    log('body:', clip(txt));
-    return { ok: res.ok, txt };
-  } catch (e) {
-    log('FOUT:', e.name, e.message);
-    return { ok: false, err: String(e) };
-  }
+    const r = await fetch(url, { ...opts, signal: AbortSignal.timeout(90000) });
+    const t = await r.text();
+    log('status', r.status, '| ct', r.headers.get('content-type'), '| acao', r.headers.get('access-control-allow-origin'));
+    log(clip(t));
+    return t;
+  } catch (e) { log('FOUT', e.message); return null; }
+}
+const post = (b) => ({ method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b) });
+
+// --- A. waterinfo chart met locationCodes (meervoud)
+for (const code of ['Nijmegen-haven(NIJM)', 'nijmegenhaven', 'Lobith(LOBH)', 'lobith', 'Hoek-van-Holland(HOEK)']) {
+  await get('chart ' + code,
+    `https://waterinfo.rws.nl/api/chart/get?mapType=waterhoogte&locationCodes=${encodeURIComponent(code)}&values=-12,48`);
 }
 
-const jsonPost = (body) => ({
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-  body: JSON.stringify(body),
-});
-
-const now = new Date();
-const iso = (d) => d.toISOString().replace('Z', '+00:00');
-
-// ---- 1. DD-API 2.0 catalogus
-await probe('ddapi20 OphalenCatalogus (grootheden)',
-  'https://ddapi20-waterwebservices.rijkswaterstaat.nl/METADATASERVICES/OphalenCatalogus',
-  jsonPost({ CatalogusFilter: { Grootheden: true, Compartimenten: true, Hoedanigheden: true, Eenheden: true } }));
-
-// ---- 2. Legacy catalogus
-await probe('legacy OphalenCatalogus',
-  'https://waterwebservices.rijkswaterstaat.nl/METADATASERVICES_DBO/OphalenCatalogus',
-  jsonPost({ CatalogusFilter: { Grootheden: true } }));
-
-// ---- 3. Laatste waarnemingen (ddapi20)
-await probe('ddapi20 OphalenLaatsteWaarnemingen (lobith/nijmegen)',
-  'https://ddapi20-waterwebservices.rijkswaterstaat.nl/ONLINEWAARNEMINGENSERVICES/OphalenLaatsteWaarnemingen',
-  jsonPost({
-    AquoPlusWaarnemingMetadataLijst: [{ AquoMetadata: { Compartiment: { Code: 'OW' }, Eenheid: { Code: 'cm' }, Grootheid: { Code: 'WATHTE' } } }],
-    LocatieLijst: [{ Code: 'lobith' }, { Code: 'nijmegenhaven' }, { Code: 'hoekvanholland' }],
-  }));
-
-// ---- 4. Waarnemingen tijdreeks (ddapi20)
-await probe('ddapi20 OphalenWaarnemingen lobith 24u',
-  'https://ddapi20-waterwebservices.rijkswaterstaat.nl/ONLINEWAARNEMINGENSERVICES/OphalenWaarnemingen',
-  jsonPost({
-    Locatie: { Code: 'lobith' },
-    AquoPlusWaarnemingMetadata: { AquoMetadata: { Eenheid: { Code: 'cm' }, Grootheid: { Code: 'WATHTE' }, Hoedanigheid: { Code: 'NAP' } } },
-    Periode: { Begindatumtijd: iso(new Date(now - 6 * 3600e3)), Einddatumtijd: iso(now) },
-  }));
-
-// ---- 5. waterinfo publieke API
+// --- B. andere waterinfo endpoints
 for (const u of [
-  'https://waterinfo.rws.nl/api/chart/get?mapType=waterhoogte&locationCode=Nijmegen-haven(NIJM)&values=-6,48',
-  'https://waterinfo.rws.nl/api/point/latestmeasurement?parameterid=waterhoogte&locationcode=Nijmegen-haven(NIJM)',
-  'https://waterinfo.rws.nl/api/point/latestmeasurements?parameterid=waterhoogte',
-  'https://waterinfo.rws.nl/api/nav/parameter?mapType=waterhoogte',
-  'https://waterinfo.rws.nl/api/point/details?locationCode=Nijmegen-haven(NIJM)',
-]) await probe('waterinfo ' + u.split('/api/')[1].split('?')[0], u, { headers: { 'Accept': 'application/json' } });
+  'https://waterinfo.rws.nl/api/point/expertinfo?parameterid=waterhoogte',
+  'https://waterinfo.rws.nl/api/details/get?locationCode=lobith&parameterId=waterhoogte',
+  'https://waterinfo.rws.nl/api/nav/themakaarten',
+  'https://waterinfo.rws.nl/api/point/latestmeasurement?parameterid=waterafvoer',
+]) await get(u.split('/api/')[1].slice(0, 60), u);
 
-// ---- 6. PDOK locatieserver
-await probe('PDOK locatieserver free',
-  'https://api.pdok.nl/bzk/locatieserver/search/v3_1/free?q=Waalkade%201%20Nijmegen&rows=3&fl=id,weergavenaam,centroide_ll,centroide_rd,type',
-  { headers: { 'Accept': 'application/json' } });
-await probe('PDOK locatieserver suggest',
-  'https://api.pdok.nl/bzk/locatieserver/search/v3_1/suggest?q=Waalkade%20Nijmegen&rows=3',
-  { headers: { 'Accept': 'application/json' } });
+// --- C. DD-API catalogus: welke locaties leveren WATHTE?
+log('\n' + '='.repeat(70), '\n# DD-API catalogus met locaties');
+try {
+  const r = await fetch('https://ddapi20-waterwebservices.rijkswaterstaat.nl/METADATASERVICES/OphalenCatalogus',
+    post({ CatalogusFilter: { Grootheden: true, Compartimenten: true, Hoedanigheden: true, Eenheden: true, Parameters: true } }));
+  const j = await r.json();
+  log('toplevel keys:', Object.keys(j).join(', '));
+  for (const k of Object.keys(j)) if (Array.isArray(j[k])) log(' ', k, 'lengte', j[k].length);
+  if (j.LocatieLijst) {
+    log('locatie voorbeeld:', JSON.stringify(j.LocatieLijst[0]));
+    const hits = j.LocatieLijst.filter(l => /lobith|nijmegen|dordrecht|hoek van holland|keizersveer/i.test(l.Naam || ''));
+    log('gezochte locaties:', JSON.stringify(hits.slice(0, 12)));
+  }
+  if (j.AquoMetadataLocatieLijst) log('koppel voorbeeld:', JSON.stringify(j.AquoMetadataLocatieLijst.slice(0, 3)));
+  const wathte = (j.AquoMetadataLijst || []).filter(a => a.Grootheid?.Code === 'WATHTE');
+  log('WATHTE metadata:', JSON.stringify(wathte.slice(0, 8)));
+} catch (e) { log('FOUT', e.message); }
 
-// ---- 7. AHN hoogte via WMS GetFeatureInfo
-const bbox = '5.8600,51.8450,5.8620,51.8470';
-for (const [naam, u] of [
-  ['AHN wms dtm_05m', `https://service.pdok.nl/rws/ahn/wms/v1_0?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetFeatureInfo&LAYERS=dtm_05m&QUERY_LAYERS=dtm_05m&CRS=CRS:84&BBOX=${bbox}&WIDTH=3&HEIGHT=3&I=1&J=1&INFO_FORMAT=application/json`],
-  ['AHN wms capabilities', 'https://service.pdok.nl/rws/ahn/wms/v1_0?SERVICE=WMS&REQUEST=GetCapabilities&VERSION=1.3.0'],
-]) await probe(naam, u, { headers: { 'Accept': 'application/json' } });
-
-const fs = await import('node:fs');
-fs.mkdirSync('probe-output', { recursive: true });
-fs.writeFileSync('probe-output/probe.log', OUT.join('\n'));
+// --- D. hoeveel waterhoogte-stations en welke klasse-labels bestaan er?
+log('\n' + '='.repeat(70), '\n# waterinfo latestmeasurement samenvatting');
+try {
+  const r = await fetch('https://waterinfo.rws.nl/api/point/latestmeasurement?parameterid=waterhoogte');
+  const j = await r.json();
+  log('aantal features:', j.features.length);
+  log('properties top:', clip(JSON.stringify(j.properties), 1200));
+  const labels = new Set(), params = new Set();
+  for (const f of j.features) for (const m of f.properties.measurements || []) { labels.add(m.measurementLabel); params.add(m.parameterId); }
+  log('labels:', [...labels].join(' | '));
+  log('parameterIds:', [...params].join('\n  '));
+  log('voorbeeldfeature:', clip(JSON.stringify(j.features.find(f => /lobith/i.test(f.properties.name))), 1500));
+} catch (e) { log('FOUT', e.message); }
