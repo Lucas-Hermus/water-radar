@@ -36,6 +36,13 @@ jobs:
       - name: Controleren of de gegevens bruikbaar zijn
         run: node tools/controleer-data.mjs
 
+      - name: Gegevens bewaren voor inspectie
+        uses: actions/upload-artifact@v4
+        with:
+          name: waterdata
+          path: site/data/
+          retention-days: 3
+
       - uses: actions/configure-pages@v5
         with:
           enablement: true
