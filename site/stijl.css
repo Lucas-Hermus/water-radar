@@ -343,7 +343,8 @@ body, .kaart, .oordeel, .schakel, .feiten dd, .tabel th, .tabel td { overflow-wr
   .tijdbalk { gap: 10px; }
   .tijdveld, .tijdveld input { width: 100%; }
   .knoppenrij { width: 100%; }
-  .knoppenrij button { flex: 1 1 auto; min-width: 74px; padding: 9px 10px; }
+  /* 1 1 30% laat er drie op de eerste regel passen en verdeelt de rest gelijkmatig */
+  .knoppenrij button { flex: 1 1 30%; min-width: 74px; padding: 9px 10px; }
   .hulp .tekstknop { display: inline-block; padding: 10px 0; min-height: 44px; }
   .momentwaarde { font-size: 14px; }
 }
