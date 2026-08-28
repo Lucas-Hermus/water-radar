@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Waterradar — waterstanden en overstromingsverwachting</title>
+<meta name="description" content="Actuele waterstanden van Rijkswaterstaat, de officiële verwachting voor de komende twee dagen en de marge tot het maaiveld op uw adres.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='26' font-size='26'%3E%F0%9F%8C%8A%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link rel="stylesheet" href="stijl.css">
+</head>
+<body>
+<a class="overslaan" href="#hoofd">Naar de inhoud</a>
+
+<header class="kop">
+  <div class="omhulsel kop-inhoud">
+    <div class="merk">
+      <span class="merk-teken" aria-hidden="true">🌊</span>
+      <div>
+        <h1>Waterradar</h1>
+        <p class="ondertitel">Waterstanden en overstromingsverwachting van Rijkswaterstaat</p>
+      </div>
+    </div>
+    <div class="ververst" id="ververst" aria-live="polite">Gegevens laden…</div>
+  </div>
+</header>
+
+<main id="hoofd" class="omhulsel">
+
+  <section class="kaart zoekblok" aria-labelledby="zoekkop">
+    <h2 id="zoekkop">Kies een adres</h2>
+    <p class="uitleg">Vul een adres, postcode of plaats in Nederland in. De radar zoekt de dichtstbijzijnde
+      meetpunten van Rijkswaterstaat, haalt de maaiveldhoogte op uit het Actueel Hoogtebestand Nederland
+      en berekent hoeveel ruimte er is tussen het water en de grond.</p>
+    <div class="zoekveld">
+      <label class="verborgen" for="adres">Adres, postcode of plaats</label>
+      <input id="adres" type="search" autocomplete="off" spellcheck="false"
+             placeholder="Bijvoorbeeld: Waalkade 1, Nijmegen" aria-describedby="zoekhulp"
+             role="combobox" aria-expanded="false" aria-controls="suggesties" aria-autocomplete="list">
+      <button id="zoekknop" type="button">Zoeken</button>
+      <ul id="suggesties" class="suggesties" role="listbox" hidden></ul>
+    </div>
+    <p id="zoekhulp" class="hulp">Of gebruik <button type="button" class="tekstknop" id="locatieknop">mijn huidige locatie</button>.</p>
+    <p id="zoekfout" class="fout" hidden></p>
+  </section>
+
+  <section id="resultaat" hidden aria-labelledby="resultaatkop">
+    <h2 id="resultaatkop" class="verborgen">Beoordeling voor het gekozen adres</h2>
+    <div id="oordeel" class="oordeel"></div>
+    <div class="raster-twee">
+      <div class="kaart" id="adresfeiten"></div>
+      <div class="kaart" id="meetpuntfeiten"></div>
+    </div>
+    <div class="kaart" id="grafiekblok">
+      <h3>Verwachte waterstand tegenover het maaiveld</h3>
+      <div id="grafiek" class="grafiek"></div>
+      <div id="grafieklegenda" class="legenda"></div>
+    </div>
+    <div class="kaart" id="bovenstroomsblok"></div>
+    <div class="kaart uitlegblok" id="berekeningblok"></div>
+  </section>
+
+  <section class="kaart" aria-labelledby="kaartkop">
+    <h2 id="kaartkop">Landelijk beeld</h2>
+    <p class="uitleg">Alle actieve meetpunten voor waterhoogte. De kleur is de klasse-indeling van
+      Rijkswaterstaat; de pijl toont of het water stijgt of daalt.</p>
+    <div id="landkaart" class="landkaart"></div>
+    <div id="kaartlegenda" class="legenda"></div>
+  </section>
+
+  <section class="kaart" aria-labelledby="stijgkop">
+    <h2 id="stijgkop">Sterkste stijgingen op dit moment</h2>
+    <p class="uitleg">Meetpunten waar het water het snelst stijgt, met de verwachte hoogste stand
+      in de komende twee dagen.</p>
+    <div class="tabelomhulsel">
+      <table id="stijgtabel" class="tabel">
+        <thead><tr><th scope="col">Meetpunt</th><th scope="col">Nu</th><th scope="col">Verandering</th><th scope="col">Hoogst verwacht</th><th scope="col">Klasse</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="kaart" aria-labelledby="netwerkkop">
+    <h2 id="netwerkkop">Hoe het water zich door de rivieren verplaatst</h2>
+    <p class="uitleg">Per riviervak is uit de meetreeksen van de afgelopen week berekend hoe lang het water
+      erover doet naar het volgende meetpunt en hoe sterk een verandering doorwerkt. Deze relaties worden
+      gebruikt om een verwachting door te geven aan meetpunten waarvoor Rijkswaterstaat er zelf geen publiceert.</p>
+    <div id="netwerkblok"></div>
+  </section>
+
+  <section class="kaart waarschuwing" aria-labelledby="voorbehoudkop">
+    <h2 id="voorbehoudkop">Belangrijk voorbehoud</h2>
+    <p><strong>Deze website is geen officiële waarschuwingsdienst en houdt geen rekening met dijken,
+      duinen, keringen, gemalen of het verschil tussen binnendijks en buitendijks gebied.</strong>
+      De radar vergelijkt de gemeten en verwachte hoogte van het open water met de hoogte van de grond
+      op uw adres. Vrijwel heel Nederland ligt achter waterkeringen, waardoor een waterstand boven het
+      maaiveld in de praktijk meestal geen wateroverlast betekent. Buitendijkse gebieden, uiterwaarden,
+      jachthavens en onbeschermde oevers lopen wel daadwerkelijk onder.</p>
+    <p>Raadpleeg bij twijfel altijd de officiële bronnen:
+      <a href="https://waterinfo.rws.nl/" rel="noopener">waterinfo.rws.nl</a>,
+      <a href="https://www.overstroomik.nl/" rel="noopener">overstroomik.nl</a> voor het overstromingsrisico
+      van uw adres, en <a href="https://www.crisis.nl/" rel="noopener">crisis.nl</a> bij een noodsituatie.
+      Bel bij acuut gevaar 112.</p>
+  </section>
+
+</main>
+
+<footer class="voet">
+  <div class="omhulsel">
+    <p>Gegevens: <a href="https://rijkswaterstaatdata.nl/waterdata/" rel="noopener">Rijkswaterstaat WaterWebservices</a>
+      en <a href="https://waterinfo.rws.nl/" rel="noopener">Waterinfo</a> ·
+      hoogte: <a href="https://www.ahn.nl/" rel="noopener">Actueel Hoogtebestand Nederland</a> via PDOK ·
+      adressen: <a href="https://www.pdok.nl/" rel="noopener">PDOK Locatieserver</a> ·
+      achtergrondkaart: <a href="https://www.pdok.nl/" rel="noopener">PDOK BRT Achtergrondkaart</a>.</p>
+    <p id="voetstempel"></p>
+  </div>
+</footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

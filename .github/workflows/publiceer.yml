@@ -1,0 +1,48 @@
+name: Waterradar publiceren
+
+on:
+  push:
+    branches: [claude/dutch-water-flood-radar-ohmzai]
+  schedule:
+    # Elke dertig minuten verse waterstanden ophalen en de site opnieuw publiceren.
+    - cron: '3,33 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  publiceren:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.publicatie.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+
+      - name: Waterdata ophalen bij Rijkswaterstaat
+        run: node tools/bouw-data.mjs
+
+      - name: Controleren of de gegevens bruikbaar zijn
+        run: node tools/controleer-data.mjs
+
+      - uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: site
+
+      - id: publicatie
+        uses: actions/deploy-pages@v4
