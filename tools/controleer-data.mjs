@@ -22,7 +22,9 @@ eis(zonderReeks === 0, `${zonderReeks} meetpunten zonder reeks`);
 const buitenNederland = stations.filter((s) => s.lat < 50 || s.lat > 54 || s.lon < 2.5 || s.lon > 7.5);
 eis(buitenNederland.length === 0, `meetpunten buiten Nederland: ${buitenNederland.map((s) => s.c).join(', ')}`);
 
-const onzin = stations.filter((s) => Math.abs(s.v) > 2000);
+// De Maas ligt bij de Belgische grens ruim 44 meter boven NAP; pas daarboven is een
+// waarde onwaarschijnlijk. Aan de lage kant is -700 cm NAP (diepe polder) de ondergrens.
+const onzin = stations.filter((s) => s.v > 6000 || s.v < -700);
 eis(onzin.length === 0, `onwaarschijnlijke waterstanden: ${onzin.map((s) => `${s.c}=${s.v}`).join(', ')}`);
 
 const oud = stations.filter((s) => Date.now() - s.t > 4 * 3600e3);

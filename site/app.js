@@ -536,11 +536,26 @@ function toonBovenstrooms(station) {
   bak.replaceChildren(maakEl('h3', null, 'Wat er bovenstrooms aankomt'));
   const relaties = (gegevens.netwerk?.relaties || []).filter((r) => r.beneden === station.c);
 
+  if (station.bron && !relaties.some((r) => r.boven === station.bron.bron)) {
+    const bronStation = gegevens.stations.find((s) => s.c === station.bron.bron);
+    if (bronStation) {
+      const p = maakEl('p', 'uitleg');
+      p.textContent =
+        `De verwachting voor dit meetpunt is afgeleid van ${bronStation.n}` +
+        (station.bron.afstandKm != null ? ` (${nlGetal(station.bron.afstandKm, 1)} km verderop)` : '') +
+        `. Dat meetpunt loopt ${station.bron.vertragingUur >= 0 ? 'voor' : 'achter'} met ` +
+        `${duurTekst(Math.abs(station.bron.vertragingUur))}; de correlatie tussen beide reeksen is ` +
+        `${nlGetal(station.bron.correlatie, 2)} en de doorwerking ${nlGetal(station.bron.versterking * 100, 0)}%.`;
+      bak.append(p);
+    }
+  }
+
   if (!relaties.length) {
-    bak.append(maakEl('p', 'uitleg',
-      `${station.n} ligt niet in een van de doorgerekende riviervakken, of er is te weinig ` +
-      'gemeten data om een betrouwbare relatie met een bovenstrooms meetpunt te bepalen. ' +
-      'De verwachting hierboven staat daarom op zichzelf.'));
+    if (!station.bron) {
+      bak.append(maakEl('p', 'uitleg',
+        `${station.n} ligt niet in een van de doorgerekende riviervakken, of er is te weinig ` +
+        'gemeten data om een betrouwbare relatie met een ander meetpunt te bepalen.'));
+    }
     return;
   }
 

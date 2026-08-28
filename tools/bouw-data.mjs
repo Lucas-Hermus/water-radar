@@ -251,53 +251,84 @@ function verschillen(rij) {
 
 // ------------------------------------------- stroomrelaties tussen meetpunten
 
-console.log('Stroomrelaties ijken op de meetreeksen…');
+// Op tienminutenschaal is de ruis groter dan de werkelijke verandering. Daarom eerst
+// glad strijken over een uur en pas daarna de verandering per uur bepalen; dat is het
+// signaal waarin een verschuiving tussen twee meetpunten zichtbaar wordt.
 const STAP = 10 * 60e3;
-const MAX_VERTRAGING_UUR = 24;
-const relaties = [];
+const VENSTER = 7;              // ongeveer een uur glad strijken
+const DIFF_STAPPEN = 6;         // verandering over een uur
 
-for (const schakel of schakels()) {
-  const boven = metingen.get(schakel.boven);
-  const beneden = metingen.get(schakel.beneden);
-  if (!boven || !beneden) continue;
-
-  const vanaf = Math.max(boven[0][0], beneden[0][0]);
-  const tot = Math.min(boven.at(-1)[0], beneden.at(-1)[0]);
-  if (tot - vanaf < 3 * 24 * UUR) continue;
-
-  const rasterBoven = raster(boven, vanaf, tot, STAP);
-  const rasterBeneden = raster(beneden, vanaf, tot, STAP);
-  const dBoven = verschillen(rasterBoven);
-  const dBeneden = verschillen(rasterBeneden);
-
-  let beste = null;
-  for (let stappen = 0; stappen <= (MAX_VERTRAGING_UUR * UUR) / STAP; stappen++) {
-    // Benedenstrooms loopt achter: vergelijk boven[i] met beneden[i + stappen].
-    const a = dBoven.slice(0, dBoven.length - stappen);
-    const b = dBeneden.slice(stappen);
-    const c = correlatie(a, b);
-    if (c && (!beste || c.r > beste.r)) beste = { ...c, vertragingUur: (stappen * STAP) / UUR };
+function gladstrijken(rij) {
+  const uit = new Array(rij.length).fill(null);
+  const halve = (VENSTER - 1) / 2;
+  for (let i = 0; i < rij.length; i++) {
+    let som = 0, aantal = 0;
+    for (let k = -halve; k <= halve; k++) {
+      const w = rij[i + k];
+      if (w != null) { som += w; aantal++; }
+    }
+    if (aantal >= halve + 1) uit[i] = som / aantal;
   }
-  if (!beste) continue;
-  relaties.push({
-    boven: schakel.boven,
-    beneden: schakel.beneden,
-    keten: schakel.keten,
-    type: schakel.type,
+  return uit;
+}
+
+function veranderingPerUur(rij) {
+  const uit = new Array(rij.length).fill(null);
+  for (let i = DIFF_STAPPEN; i < rij.length; i++) {
+    uit[i] = rij[i] == null || rij[i - DIFF_STAPPEN] == null ? null : rij[i] - rij[i - DIFF_STAPPEN];
+  }
+  return uit;
+}
+
+// Zoekt de verschuiving waarbij de veranderingen bovenstrooms en benedenstrooms het
+// best samenvallen. Een positieve vertraging betekent: benedenstrooms loopt achter.
+function ijkRelatie(bovenReeks, benedenReeks, { minUur = 0, maxUur = 24 } = {}) {
+  const vanaf = Math.max(bovenReeks[0][0], benedenReeks[0][0]);
+  const tot = Math.min(bovenReeks.at(-1)[0], benedenReeks.at(-1)[0]);
+  if (tot - vanaf < 18 * UUR) return null;
+
+  const dBoven = veranderingPerUur(gladstrijken(raster(bovenReeks, vanaf, tot, STAP)));
+  const dBeneden = veranderingPerUur(gladstrijken(raster(benedenReeks, vanaf, tot, STAP)));
+
+  const minStap = Math.round((minUur * UUR) / STAP);
+  const maxStap = Math.round((maxUur * UUR) / STAP);
+  let beste = null;
+  for (let k = minStap; k <= maxStap; k++) {
+    const a = k >= 0 ? dBoven.slice(0, dBoven.length - k) : dBoven.slice(-k);
+    const b = k >= 0 ? dBeneden.slice(k) : dBeneden.slice(0, dBeneden.length + k);
+    const c = correlatie(a, b);
+    if (c && (!beste || Math.abs(c.r) > Math.abs(beste.r))) beste = { ...c, vertragingUur: (k * STAP) / UUR };
+  }
+  if (!beste) return null;
+  return {
     vertragingUur: Number(beste.vertragingUur.toFixed(2)),
     versterking: Number(beste.helling.toFixed(3)),
     correlatie: Number(beste.r.toFixed(3)),
     punten: beste.n,
-  });
+  };
+}
+
+console.log('Stroomrelaties in de riviervakken ijken…');
+const relaties = [];
+for (const schakel of schakels()) {
+  const boven = metingen.get(schakel.boven);
+  const beneden = metingen.get(schakel.beneden);
+  if (!boven || !beneden) continue;
+  const ijking = ijkRelatie(boven, beneden, { minUur: 0, maxUur: 24 });
+  if (!ijking) continue;
+  relaties.push({ boven: schakel.boven, beneden: schakel.beneden, keten: schakel.keten, type: schakel.type, ...ijking });
 }
 relaties.sort((a, b) => b.correlatie - a.correlatie);
-console.log(`  ${relaties.length} stroomrelaties berekend`);
+console.log(`  ${relaties.length} riviervakken doorgerekend, ${relaties.filter((r) => r.correlatie >= 0.6).length} bruikbaar`);
 
 // ------------------------------------------- afgeleide verwachting doorgeven
 
-// Voor meetpunten zonder officiële verwachting: neem de verandering bovenstrooms
-// over, vertraagd met de gemeten vertraging en geschaald met de gemeten versterking.
+// Meetpunten waarvoor Rijkswaterstaat geen verwachting publiceert, krijgen er een
+// afgeleid van een meetpunt dat er wel een heeft. Eerst via de riviervakken hierboven,
+// daarna via het best passende meetpunt in de omgeving. Wat niet goed genoeg past,
+// krijgt geen verwachting.
 const BETROUWBAAR = 0.6;
+const BETROUWBAAR_AUTOMATISCH = 0.8;
 const afgeleid = new Map();
 const afgeleidBron = new Map();
 
@@ -309,33 +340,78 @@ function reeksVoor(code) {
   return [...m.filter(([t]) => t <= v[0][0]), ...v];
 }
 
-// Meerdere rondes zodat een verwachting ook twee schakels ver kan doorwerken.
+// Neemt de verandering bij het bronmeetpunt over, verschoven met de gemeten vertraging
+// en geschaald met de gemeten doorwerking, verankerd aan de huidige eigen stand.
+function leidAf(code, bronCode, ijking) {
+  const bron = reeksVoor(bronCode);
+  const eigen = metingen.get(code);
+  if (!bron || !eigen) return false;
+  const verschuiving = ijking.vertragingUur * UUR;
+  const nuWaarde = eigen.at(-1)[1];
+  const referentie = waardeOp(bron, nu - verschuiving);
+  if (referentie == null) return false;
+
+  const reeks = [];
+  for (let t = nu.getTime() + STAP; t <= nu.getTime() + VERWACHTING_UREN * UUR; t += STAP) {
+    const w = waardeOp(bron, t - verschuiving);
+    if (w == null) break;
+    reeks.push([t, Number((nuWaarde + ijking.versterking * (w - referentie)).toFixed(1))]);
+  }
+  if (reeks.length < 12) return false;
+  afgeleid.set(code, reeks);
+  afgeleidBron.set(code, { bron: bronCode, ...ijking, wijze: 'riviervak' });
+  return true;
+}
+
 for (let ronde = 0; ronde < 4; ronde++) {
   for (const rel of relaties) {
     if (verwachtingen.has(rel.beneden) || afgeleid.has(rel.beneden)) continue;
-    if (rel.correlatie < BETROUWBAAR) continue;
-    const bron = reeksVoor(rel.boven);
-    const eigen = metingen.get(rel.beneden);
-    if (!bron || !eigen) continue;
+    if (rel.correlatie < BETROUWBAAR || rel.versterking <= 0) continue;
+    leidAf(rel.beneden, rel.boven, rel);
+  }
+}
+console.log(`  ${afgeleid.size} verwachtingen afgeleid via de riviervakken`);
 
-    const vertraging = rel.vertragingUur * UUR;
-    const nuWaarde = eigen.at(-1)[1];
-    const referentie = waardeOp(bron, nu - vertraging);
-    if (referentie == null) continue;
+// Automatisch het best passende meetpunt zoeken voor wat er dan nog over is.
+const metVerwachting = actief.filter((c) => verwachtingen.has(c) && metingen.has(c));
+const zonder = actief.filter((c) => !verwachtingen.has(c) && !afgeleid.has(c) && metingen.has(c));
+console.log(`Beste bronmeetpunt zoeken voor ${zonder.length} meetpunten zonder verwachting…`);
 
-    const reeks = [];
-    for (let t = nu.getTime() + STAP; t <= nu.getTime() + VERWACHTING_UREN * UUR; t += STAP) {
-      const w = waardeOp(bron, t - vertraging);
-      if (w == null) break;
-      reeks.push([t, Number((nuWaarde + rel.versterking * (w - referentie)).toFixed(1))]);
-    }
-    if (reeks.length > 3) {
-      afgeleid.set(rel.beneden, reeks);
-      afgeleidBron.set(rel.beneden, rel);
+const plaatsVan = (code) => laatste.get(code)?.locatie || locatiePerCode.get(code);
+const kmTussen = (a, b) => {
+  const R = 6371, rad = (g) => (g * Math.PI) / 180;
+  const dLat = rad(b.Lat - a.Lat), dLon = rad(b.Lon - a.Lon);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a.Lat)) * Math.cos(rad(b.Lat)) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
+};
+
+let automatisch = 0;
+for (const code of zonder) {
+  const hier = plaatsVan(code);
+  if (!hier?.Lat) continue;
+  const eigen = metingen.get(code);
+  const kandidaten = metVerwachting
+    .map((bron) => ({ bron, km: kmTussen(hier, plaatsVan(bron) || {}) }))
+    .filter((k) => Number.isFinite(k.km) && k.km <= 75)
+    .sort((a, b) => a.km - b.km)
+    .slice(0, 12);
+
+  let beste = null;
+  for (const kandidaat of kandidaten) {
+    const ijking = ijkRelatie(metingen.get(kandidaat.bron), eigen, { minUur: -12, maxUur: 12 });
+    if (!ijking) continue;
+    if (Math.abs(ijking.versterking) < 0.1 || Math.abs(ijking.versterking) > 3) continue;
+    if (!beste || ijking.correlatie > beste.ijking.correlatie) beste = { ...kandidaat, ijking };
+  }
+  if (beste && beste.ijking.correlatie >= BETROUWBAAR_AUTOMATISCH) {
+    if (leidAf(code, beste.bron, beste.ijking)) {
+      afgeleidBron.set(code, { bron: beste.bron, ...beste.ijking, wijze: 'omgeving', afstandKm: Number(beste.km.toFixed(1)) });
+      automatisch++;
     }
   }
 }
-console.log(`  ${afgeleid.size} afgeleide verwachtingen`);
+console.log(`  ${automatisch} verwachtingen afgeleid van een meetpunt in de omgeving`);
+console.log(`  ${afgeleid.size} afgeleide verwachtingen in totaal`);
 
 // ---------------------------------------------------------------- uitschrijven
 
@@ -375,7 +451,7 @@ for (const code of actief) {
     max30: waarden.length ? Math.max(...waarden) : null,
     vw: verw ? 'officieel' : afg ? 'afgeleid' : null,
     vwMax: alles.length ? Math.max(...alles) : null,
-    bron: bron ? { boven: bron.boven, vertragingUur: bron.vertragingUur, versterking: bron.versterking, correlatie: bron.correlatie } : null,
+    bron: bron || null,
   });
 
   reeksen[code] = {
