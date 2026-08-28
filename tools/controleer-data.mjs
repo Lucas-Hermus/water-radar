@@ -33,6 +33,20 @@ eis(oud.length === 0, `${oud.length} meetpunten met een meting ouder dan vier uu
 const metVerwachting = stations.filter((s) => s.vw).length;
 eis(metVerwachting >= 20, `te weinig verwachtingen: ${metVerwachting}`);
 
+// De verwachting moet aansluiten op de laatste meting; een grote sprong wijst op een
+// verkeerde eenheid, een verkeerd referentievlak of een fout in de afleiding.
+const sprongen = [];
+for (const [code, r] of Object.entries(reeksen)) {
+  if (!r.v?.length || !r.m?.length) continue;
+  const laatsteMeting = r.m.at(-1)[1];
+  const eerste = r.v.find(([t]) => t >= r.m.at(-1)[0])?.[1] ?? r.v[0][1];
+  sprongen.push({ code, sprong: Math.abs(eerste - laatsteMeting) });
+}
+const teGroot = sprongen.filter((s) => s.sprong > 100);
+eis(teGroot.length <= 3,
+  `${teGroot.length} meetpunten waar de verwachting meer dan een meter van de laatste meting afwijkt: ` +
+  teGroot.slice(0, 6).map((s) => `${s.code}=${s.sprong.toFixed(0)}cm`).join(', '));
+
 const raar = netwerk.relaties.filter((r) => r.correlatie > 1.001 || r.correlatie < -1.001 || r.vertragingUur < 0);
 eis(raar.length === 0, `onmogelijke stroomrelaties: ${raar.length}`);
 
@@ -41,6 +55,11 @@ console.log(`Met verwachting: ${metVerwachting} (officieel ${meta.aantalVerwacht
 console.log(`Stroomrelaties: ${netwerk.relaties.length}, waarvan bruikbaar: ${netwerk.relaties.filter((r) => r.correlatie >= 0.6).length}`);
 const nul = stations.filter((s) => s.tr == null).length;
 console.log(`Zonder trend: ${nul}`);
+if (sprongen.length) {
+  const gesorteerd = [...sprongen].sort((a, b) => a.sprong - b.sprong);
+  console.log(`Aansluiting meting/verwachting: mediaan ${gesorteerd[Math.floor(gesorteerd.length / 2)].sprong.toFixed(1)} cm, ` +
+    `grootste ${gesorteerd.at(-1).sprong.toFixed(0)} cm (${gesorteerd.at(-1).code})`);
+}
 
 if (fouten.length) {
   console.error('\nControle mislukt:');
