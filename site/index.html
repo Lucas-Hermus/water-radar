@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Waterradar — waterstanden en overstromingsverwachting</title>
-<meta name="description" content="Actuele waterstanden van Rijkswaterstaat, de officiële verwachting voor de komende twee dagen en de marge tot het maaiveld op uw adres.">
+<title>Waterradar — onafhankelijke waterstandenkaart</title>
+<meta name="description" content="Particulier hobbyproject dat de open data van Rijkswaterstaat gebruikt om per adres de waterstand, de verwachting en de marge tot het maaiveld te tonen. Geen website van de overheid.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='26' font-size='26'%3E%F0%9F%8C%8A%3C/text%3E%3C/svg%3E">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="stylesheet" href="stijl.css">
@@ -18,12 +18,20 @@
       <span class="merk-teken" aria-hidden="true">🌊</span>
       <div>
         <h1>Waterradar</h1>
-        <p class="ondertitel">Waterstanden en overstromingsverwachting van Rijkswaterstaat</p>
+        <p class="ondertitel">Hobbyproject op basis van de open data van Rijkswaterstaat</p>
       </div>
     </div>
     <div class="ververst" id="ververst" aria-live="polite">Gegevens laden…</div>
   </div>
 </header>
+
+<p class="geen-overheid omhulsel" role="note">
+  <strong>Dit is geen website van de overheid.</strong> Waterradar is een particulier project van
+  een enkele hobbyist en staat op geen enkele manier in verbinding met Rijkswaterstaat, PDOK, het
+  Kadaster, een waterschap of een andere overheidsinstantie. De site <em>gebruikt</em> alleen hun
+  openbare data. Officiële waterberichtgeving vindt u op
+  <a href="https://waterinfo.rws.nl/" rel="noopener">waterinfo.rws.nl</a>.
+</p>
 
 <main id="hoofd" class="omhulsel">
 
@@ -56,6 +64,29 @@
       <div id="grafiek" class="grafiek"></div>
       <div id="grafieklegenda" class="legenda"></div>
     </div>
+    <div class="kaart" id="geschiedenisblok">
+      <h3>Terug in de tijd</h3>
+      <p class="uitleg" id="archiefuitleg">Kies een moment om te zien hoe hoog het water toen stond,
+        en of het water sinds het begin van het archief ooit boven uw maaiveld is uitgekomen.</p>
+      <div class="tijdbalk">
+        <div class="tijdveld">
+          <label for="moment">Datum en tijd</label>
+          <input id="moment" type="datetime-local" step="3600">
+        </div>
+        <div class="knoppenrij" role="group" aria-label="Hoeveel tijd rond dat moment">
+          <button type="button" data-uren="24">1 dag</button>
+          <button type="button" data-uren="168" class="actief">1 week</button>
+          <button type="button" data-uren="744">1 maand</button>
+          <button type="button" data-uren="8760">1 jaar</button>
+          <button type="button" data-uren="0">Alles</button>
+        </div>
+      </div>
+      <p id="momentwaarde" class="momentwaarde"></p>
+      <div id="geschiedenisgrafiek" class="grafiek"></div>
+      <div id="geschiedenislegenda" class="legenda"></div>
+      <div id="overstromingen"></div>
+    </div>
+
     <div class="kaart" id="bovenstroomsblok"></div>
     <div class="kaart uitlegblok" id="berekeningblok"></div>
   </section>
@@ -90,7 +121,10 @@
 
   <section class="kaart waarschuwing" aria-labelledby="voorbehoudkop">
     <h2 id="voorbehoudkop">Belangrijk voorbehoud</h2>
-    <p><strong>Deze website is geen officiële waarschuwingsdienst en houdt geen rekening met dijken,
+    <p><strong>Waterradar is gemaakt door een particulier, niet door de overheid.</strong> Er is geen
+      enkele band met Rijkswaterstaat of een andere instantie, en niemand controleert de uitkomsten
+      van deze site. Reken er niet op zoals u op een officiële waarschuwing zou rekenen.</p>
+    <p><strong>De site is geen officiële waarschuwingsdienst en houdt geen rekening met dijken,
       duinen, keringen, gemalen of het verschil tussen binnendijks en buitendijks gebied.</strong>
       De radar vergelijkt de gemeten en verwachte hoogte van het open water met de hoogte van de grond
       op uw adres. Vrijwel heel Nederland ligt achter waterkeringen, waardoor een waterstand boven het
@@ -107,6 +141,9 @@
 
 <footer class="voet">
   <div class="omhulsel">
+    <p class="voet-nadruk">Waterradar is een particulier hobbyproject en geen uitgave van de
+      Nederlandse overheid. De gebruikte gegevens zijn openbare data van onderstaande organisaties;
+      die organisaties zijn niet betrokken bij deze site en dragen er geen verantwoordelijkheid voor.</p>
     <p>Gegevens: <a href="https://rijkswaterstaatdata.nl/waterdata/" rel="noopener">Rijkswaterstaat WaterWebservices</a>
       en <a href="https://waterinfo.rws.nl/" rel="noopener">Waterinfo</a> ·
       hoogte: <a href="https://www.ahn.nl/" rel="noopener">Actueel Hoogtebestand Nederland</a> via PDOK ·

@@ -1,0 +1,58 @@
+name: Meetarchief bijwerken
+
+on:
+  schedule:
+    # Een keer per etmaal, buiten de spits, het archief aanvullen en verder terug uitbreiden.
+    - cron: '40 3 * * *'
+  workflow_dispatch:
+    inputs:
+      stap_dagen:
+        description: 'Hoeveel dagen er deze beurt verder terug wordt opgehaald'
+        required: false
+        default: '30'
+      diepte_dagen:
+        description: 'Hoe ver het archief uiteindelijk terug moet lopen'
+        required: false
+        default: '730'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: archief
+  cancel-in-progress: false
+
+jobs:
+  archief:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+
+      - name: Archief ophalen en bijwerken
+        env:
+          ARCHIEF_STAP_DAGEN: ${{ inputs.stap_dagen || '30' }}
+          ARCHIEF_DIEPTE_DAGEN: ${{ inputs.diepte_dagen || '730' }}
+        run: node tools/archief.mjs
+
+      - name: Wijzigingen vastleggen
+        run: |
+          git config user.name "waterradar-archief"
+          git config user.email "noreply@github.com"
+          git add archief
+          if git diff --cached --quiet; then
+            echo "Geen wijzigingen in het archief."
+          else
+            git commit -m "Meetarchief bijgewerkt tot $(date -u +%Y-%m-%d)"
+            for poging in 1 2 3 4; do
+              git pull --rebase origin claude/dutch-water-flood-radar-ohmzai && \
+                git push origin HEAD:claude/dutch-water-flood-radar-ohmzai && exit 0
+              echo "Poging $poging mislukt, opnieuw proberen…"
+              sleep $((2 ** poging))
+            done
+            exit 1
+          fi

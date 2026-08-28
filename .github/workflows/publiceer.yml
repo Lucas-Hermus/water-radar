@@ -36,6 +36,9 @@ jobs:
       - name: Controleren of de gegevens bruikbaar zijn
         run: node tools/controleer-data.mjs
 
+      - name: Meetarchief samenstellen voor de website
+        run: node tools/stel-archief-samen.mjs
+
       - name: Steekproef van de gegevens tonen
         run: node tools/steekproef.mjs
 

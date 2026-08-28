@@ -10,83 +10,25 @@
 
 import { writeFile, mkdir } from 'node:fs/promises';
 import { schakels, netwerkPunten, KETENS } from './netwerk.mjs';
+import { api, parallel, haalCatalogus, meetpuntenPerProces, haalReeks, teller, UUR } from './rws.mjs';
 
-const DDAPI = 'https://ddapi20-waterwebservices.rijkswaterstaat.nl';
 const WATERINFO = 'https://waterinfo.rws.nl/api/point/latestmeasurement?parameterid=waterhoogte';
 const UITVOER = new URL('../site/data/', import.meta.url);
 
-const UUR = 3600e3;
 const HISTORIE_UREN = 30;          // getoonde meetgeschiedenis
 const IJK_UREN = 7 * 24;           // reeks voor het ijken van de stroomrelaties
 const VERWACHTING_UREN = 54;       // vooruitblik
 const VERS_UREN = 3;               // meetpunt telt als actief bij meting binnen deze tijd
 
 const nu = new Date();
-const tijdstempel = (d) => d.toISOString().replace('Z', '+00:00');
-
-let aantalVerzoeken = 0;
-
-async function api(pad, body, pogingen = 3) {
-  for (let poging = 1; poging <= pogingen; poging++) {
-    try {
-      aantalVerzoeken++;
-      const res = await fetch(DDAPI + pad, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify(body),
-        signal: AbortSignal.timeout(90000),
-      });
-      if (!res.ok) throw new Error('HTTP ' + res.status + ' ' + (await res.text()).slice(0, 200));
-      return await res.json();
-    } catch (fout) {
-      if (poging === pogingen) throw fout;
-      await new Promise((r) => setTimeout(r, 800 * poging));
-    }
-  }
-}
-
-// Voert taken uit met een begrensd aantal gelijktijdige verzoeken.
-async function parallel(items, grens, taak) {
-  const uit = new Array(items.length);
-  let volgende = 0;
-  const werkers = Array.from({ length: Math.min(grens, items.length) }, async () => {
-    while (true) {
-      const i = volgende++;
-      if (i >= items.length) return;
-      try { uit[i] = await taak(items[i], i); } catch (fout) { uit[i] = { fout: String(fout.message || fout) }; }
-    }
-  });
-  await Promise.all(werkers);
-  return uit;
-}
 
 // ---------------------------------------------------------------- catalogus
 
 console.log('Catalogus ophalen…');
-const catalogus = await api('/METADATASERVICES/OphalenCatalogus', {
-  CatalogusFilter: { Grootheden: true, ProcesTypes: true, Hoedanigheden: true, Eenheden: true, Compartimenten: true },
-});
-
-const metaIds = {};
-for (const a of catalogus.AquoMetadataLijst) {
-  if (a.Grootheid?.Code === 'WATHTE' && a.Hoedanigheid?.Code === 'NAP' && a.Eenheid?.Code === 'cm') {
-    metaIds[a.ProcesType] = a.AquoMetadata_MessageID;
-  }
-}
+const catalogus = await haalCatalogus();
+const { ids: metaIds, codes: codesPerProces } = meetpuntenPerProces(catalogus);
 console.log('Aquo-metadata:', JSON.stringify(metaIds));
 if (!metaIds.meting) throw new Error('Geen metadata voor gemeten waterhoogte t.o.v. NAP gevonden');
-
-const locatiePerId = new Map(catalogus.LocatieLijst.map((l) => [l.Locatie_MessageID, l]));
-const codesPerProces = {};
-for (const [proces, id] of Object.entries(metaIds)) codesPerProces[proces] = new Set();
-for (const koppel of catalogus.AquoMetadataLocatieLijst) {
-  for (const [proces, id] of Object.entries(metaIds)) {
-    if (koppel.AquoMetaData_MessageID === id) {
-      const loc = locatiePerId.get(koppel.Locatie_MessageID);
-      if (loc) codesPerProces[proces].add(loc.Code);
-    }
-  }
-}
 for (const [proces, set] of Object.entries(codesPerProces)) console.log(`  ${proces}: ${set.size} meetpunten`);
 
 const locatiePerCode = new Map();
@@ -151,29 +93,6 @@ try {
 // ------------------------------------------------------------------ reeksen
 
 const netwerkSet = new Set(netwerkPunten());
-
-async function haalReeks(code, procesType, vanaf, tot) {
-  const antwoord = await api('/ONLINEWAARNEMINGENSERVICES/OphalenWaarnemingen', {
-    Locatie: { Code: code },
-    AquoPlusWaarnemingMetadata: {
-      AquoMetadata: {
-        Eenheid: { Code: 'cm' }, Grootheid: { Code: 'WATHTE' },
-        Hoedanigheid: { Code: 'NAP' }, ProcesType: procesType,
-      },
-    },
-    Periode: { Begindatumtijd: tijdstempel(vanaf), Einddatumtijd: tijdstempel(tot) },
-  });
-  const punten = [];
-  for (const w of antwoord.WaarnemingenLijst || []) {
-    for (const m of w.MetingenLijst || []) {
-      const waarde = m.Meetwaarde?.Waarde_Numeriek;
-      if (waarde == null || Math.abs(waarde) > 10000) continue;
-      punten.push([new Date(m.Tijdstip).getTime(), waarde]);
-    }
-  }
-  punten.sort((a, b) => a[0] - b[0]);
-  return punten;
-}
 
 console.log(`Meetreeksen ophalen voor ${actief.length} meetpunten…`);
 const metingen = new Map();
@@ -487,7 +406,7 @@ await schrijf('meta.json', {
   aantalAfgeleid: afgeleid.size,
   historieUren: HISTORIE_UREN,
   verwachtingUren: VERWACHTING_UREN,
-  verzoeken: aantalVerzoeken,
+  verzoeken: teller.verzoeken,
   bronnen: [
     { naam: 'Rijkswaterstaat WaterWebservices (DD-API 2.0)', url: 'https://rijkswaterstaatdata.nl/waterdata/' },
     { naam: 'Rijkswaterstaat Waterinfo', url: 'https://waterinfo.rws.nl/' },
@@ -497,5 +416,5 @@ await schrijf('stations.json', stations);
 await schrijf('reeksen.json', reeksen);
 await schrijf('netwerk.json', { ketens: KETENS, relaties });
 
-console.log(`Klaar. ${aantalVerzoeken} verzoeken aan Rijkswaterstaat.`);
+console.log(`Klaar. ${teller.verzoeken} verzoeken, ${(teller.bytes / 1048576).toFixed(0)} MB opgehaald.`);
 if (stations.length < 50) throw new Error(`Te weinig meetpunten (${stations.length}); publicatie afgebroken.`);

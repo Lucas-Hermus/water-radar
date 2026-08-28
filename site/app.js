@@ -274,9 +274,10 @@ function beoordeel(adres) {
   toonOordeel({ adres, station, dichtstbij, marge, maaiveld, waterNu, overschrijding, kleinsteMarge, hoogsteVerwacht, hoogstePunt });
   toonAdresFeiten(adres, dichtstbij, maaiveld);
   toonMeetpuntFeiten(station, dichtstbij, soortVerwachting, hoogsteVerwacht, hoogstePunt, buren);
-  tekenGrafiek(meting, verwachting, maaiveld, soortVerwachting, station);
+  tekenGrafiek({ meting, verwachting, maaiveld, soortVerwachting, station });
   toonBovenstrooms(station);
   toonBerekening(station, adres, soortVerwachting);
+  toonGeschiedenis(station, maaiveld).catch((fout) => console.warn('Archief niet beschikbaar', fout));
 }
 
 function toonOordeel(g) {
@@ -402,18 +403,28 @@ function toonMeetpuntFeiten(station, dichtstbij, soortVerwachting, hoogsteVerwac
 
 /* ---------------------------------------------------------------- grafiek */
 
-function tekenGrafiek(meting, verwachting, maaiveld, soortVerwachting, station) {
-  const bak = el('grafiek');
+const laatsteGrafieken = new Map();
+
+function tekenGrafiek(opties) {
+  const { doel = 'grafiek', legendaDoel = 'grafieklegenda', meting, verwachting, band,
+    maaiveld, soortVerwachting, station, moment, toonNu = true, leegTekst } = opties;
+  laatsteGrafieken.set(doel, opties);
+  const bak = el(doel);
   bak.replaceChildren();
-  const punten = [...(meting || []), ...(verwachting || [])];
+  const punten = [...(meting || []), ...(verwachting || []),
+    ...(band || []).flatMap((p) => [{ t: p.t, m: p.lo }, { t: p.t, m: p.hi }])];
   if (!punten.length) {
-    bak.append(maakEl('p', 'hulp', 'Voor dit meetpunt is geen reeks beschikbaar.'));
-    el('grafieklegenda').replaceChildren();
+    bak.append(maakEl('p', 'hulp', leegTekst || 'Voor dit meetpunt is geen reeks beschikbaar.'));
+    el(legendaDoel).replaceChildren();
     return;
   }
 
-  const B = 880, H = 340;
-  const marge = { boven: 30, rechts: 16, onder: 40, links: 62 };
+  const breedte = bak.clientWidth || 880;
+  const smal = breedte < 560;
+  const B = Math.max(300, Math.min(Math.round(breedte), 900));
+  const H = smal ? 250 : 340;
+  const tekst = smal ? 11 : 12;
+  const marge = { boven: smal ? 24 : 30, rechts: smal ? 8 : 16, onder: smal ? 34 : 40, links: smal ? 42 : 62 };
   const bx = B - marge.links - marge.rechts;
   const by = H - marge.boven - marge.onder;
 
@@ -443,31 +454,38 @@ function tekenGrafiek(meting, verwachting, maaiveld, soortVerwachting, station) 
   };
 
   // horizontale hulplijnen met hoogte in meters
-  const stappen = 5;
+  const stappen = smal ? 4 : 5;
   for (let i = 0; i <= stappen; i++) {
     const waarde = yMin + ((yMax - yMin) * i) / stappen;
     const yy = y(waarde);
     svg.append(ns('line', { x1: marge.links, x2: B - marge.rechts, y1: yy, y2: yy, stroke: 'currentColor', 'stroke-opacity': .12 }));
-    const label = ns('text', { x: marge.links - 8, y: yy + 4, 'text-anchor': 'end', 'font-size': 12, fill: 'currentColor', 'fill-opacity': .65 });
+    const label = ns('text', { x: marge.links - 6, y: yy + 4, 'text-anchor': 'end', 'font-size': tekst, fill: 'currentColor', 'fill-opacity': .65 });
     label.textContent = nlGetal(waarde, 1);
     svg.append(label);
   }
-  const asTitel = ns('text', { x: 4, y: 13, 'font-size': 12, fill: 'currentColor', 'fill-opacity': .65 });
-  asTitel.textContent = 'meter t.o.v. NAP';
+  const asTitel = ns('text', { x: 2, y: 12, 'font-size': tekst, fill: 'currentColor', 'fill-opacity': .65 });
+  asTitel.textContent = smal ? 'm NAP' : 'meter t.o.v. NAP';
   svg.append(asTitel);
 
   // dagscheiding en tijdlabels
-  const dag = 86400000;
-  for (let t = Math.ceil(tMin / (6 * 3600000)) * 6 * 3600000; t <= tMax; t += 6 * 3600000) {
+  const spanUren = (tMax - tMin) / 3600000;
+  const stapUren = spanUren > 24 * 40 ? 24 * 14 : spanUren > 24 * 7 ? 24 * 2 : spanUren > 24 * 2 ? (smal ? 24 : 12) : smal ? 12 : 6;
+  const stapMs = stapUren * 3600000;
+  for (let t = Math.ceil(tMin / stapMs) * stapMs; t <= tMax; t += stapMs) {
     const xx = x(t);
-    const middernacht = new Date(t).getHours() === 0;
+    const datum = new Date(t);
+    const middernacht = datum.getHours() === 0;
     svg.append(ns('line', { x1: xx, x2: xx, y1: marge.boven, y2: marge.boven + by, stroke: 'currentColor', 'stroke-opacity': middernacht ? .2 : .07 }));
-    const label = ns('text', { x: xx, y: H - 22, 'text-anchor': 'middle', 'font-size': 12, fill: 'currentColor', 'fill-opacity': .7 });
-    label.textContent = tijdTekst(new Date(t));
+    if (xx < marge.links + 8 || xx > B - marge.rechts - 8) continue;
+    const langeReeks = stapUren >= 24;
+    const label = ns('text', { x: xx, y: H - (langeReeks ? 12 : 22), 'text-anchor': 'middle', 'font-size': tekst, fill: 'currentColor', 'fill-opacity': .7 });
+    label.textContent = langeReeks
+      ? datum.toLocaleDateString('nl-NL', { day: 'numeric', month: 'short' })
+      : tijdTekst(datum);
     svg.append(label);
-    if (middernacht) {
-      const dagLabel = ns('text', { x: xx, y: H - 6, 'text-anchor': 'middle', 'font-size': 11, fill: 'currentColor', 'fill-opacity': .55 });
-      dagLabel.textContent = new Date(t).toLocaleDateString('nl-NL', { weekday: 'short', day: 'numeric', month: 'short' });
+    if (middernacht && !langeReeks) {
+      const dagLabel = ns('text', { x: xx, y: H - 6, 'text-anchor': 'middle', 'font-size': tekst - 1, fill: 'currentColor', 'fill-opacity': .55 });
+      dagLabel.textContent = datum.toLocaleDateString('nl-NL', { day: 'numeric', month: 'short' });
       svg.append(dagLabel);
     }
   }
@@ -482,14 +500,24 @@ function tekenGrafiek(meting, verwachting, maaiveld, soortVerwachting, station) 
       x1: marge.links, x2: B - marge.rechts, y1: y(maaiveld), y2: y(maaiveld),
       stroke: '#b3241c', 'stroke-width': 2, 'stroke-dasharray': '7 5',
     }));
-    const label = ns('text', { x: marge.links + 6, y: y(maaiveld) - 6, 'font-size': 12, fill: '#b3241c' });
-    label.textContent = `maaiveld ${meter(maaiveld)} NAP`;
+    const label = ns('text', { x: marge.links + 5, y: Math.max(marge.boven + 11, y(maaiveld) - 6), 'font-size': tekst, fill: '#b3241c' });
+    label.textContent = smal ? `maaiveld ${meter(maaiveld)}` : `maaiveld ${meter(maaiveld)} NAP`;
     svg.append(label);
   }
 
   const pad = (reeks) => reeks.map((p, i) => `${i ? 'L' : 'M'}${x(p.t).toFixed(1)} ${y(p.m).toFixed(1)}`).join(' ');
+
+  // De bandbreedte tussen het laagste en het hoogste kwartier binnen elk uur.
+  if (band?.length) {
+    const boven = band.map((p, i) => `${i ? 'L' : 'M'}${x(p.t).toFixed(1)} ${y(p.hi).toFixed(1)}`).join(' ');
+    const onder = [...band].reverse().map((p) => `L${x(p.t).toFixed(1)} ${y(p.lo).toFixed(1)}`).join(' ');
+    svg.append(ns('path', { d: `${boven} ${onder} Z`, fill: '#0d6b73', 'fill-opacity': .22, stroke: 'none' }));
+    svg.append(ns('path', { d: band.map((p, i) => `${i ? 'L' : 'M'}${x(p.t).toFixed(1)} ${y(p.hi).toFixed(1)}`).join(' '),
+      fill: 'none', stroke: '#0d6b73', 'stroke-width': 1.6, 'stroke-linejoin': 'round' }));
+  }
+
   if (meting?.length) {
-    svg.append(ns('path', { d: pad(meting), fill: 'none', stroke: '#0b5cab', 'stroke-width': 2.4, 'stroke-linejoin': 'round' }));
+    svg.append(ns('path', { d: pad(meting), fill: 'none', stroke: '#0d6b73', 'stroke-width': 2.4, 'stroke-linejoin': 'round' }));
   }
   if (verwachting?.length) {
     svg.append(ns('path', {
@@ -498,18 +526,24 @@ function tekenGrafiek(meting, verwachting, maaiveld, soortVerwachting, station) 
     }));
   }
 
+  // markering voor het gekozen moment
+  if (moment != null && moment >= tMin && moment <= tMax) {
+    svg.append(ns('line', { x1: x(moment), x2: x(moment), y1: marge.boven, y2: marge.boven + by,
+      stroke: 'var(--accent, #b3630a)', 'stroke-width': 2 }));
+  }
+
   // markering voor "nu"
   const nu = Date.now();
-  if (nu >= tMin && nu <= tMax) {
+  if (toonNu && nu >= tMin && nu <= tMax) {
     svg.append(ns('line', { x1: x(nu), x2: x(nu), y1: marge.boven, y2: marge.boven + by, stroke: 'currentColor', 'stroke-opacity': .45, 'stroke-width': 1.5 }));
-    const label = ns('text', { x: x(nu) + 5, y: marge.boven + 12, 'font-size': 12, fill: 'currentColor', 'fill-opacity': .7 });
+    const label = ns('text', { x: x(nu) + 4, y: marge.boven + 11, 'font-size': tekst, fill: 'currentColor', 'fill-opacity': .7 });
     label.textContent = 'nu';
     svg.append(label);
   }
 
   bak.append(svg);
 
-  const legenda = el('grafieklegenda');
+  const legenda = el(legendaDoel);
   legenda.replaceChildren();
   const item = (kleur, tekst, streep) => {
     const s = maakEl('span');
@@ -519,7 +553,8 @@ function tekenGrafiek(meting, verwachting, maaiveld, soortVerwachting, station) 
     s.append(i, document.createTextNode(tekst));
     return s;
   };
-  legenda.append(item('#0b5cab', 'gemeten waterstand'));
+  if (band?.length) legenda.append(item('#0d6b73', 'gemeten hoogste en laagste stand per uur'));
+  if (meting?.length) legenda.append(item('#0d6b73', 'gemeten waterstand'));
   if (verwachting?.length) {
     legenda.append(item('#0b8a7a',
       soortVerwachting === 'afgeleid'
@@ -623,6 +658,232 @@ function toonBerekening(station, adres, soortVerwachting) {
   bak.append(lijst);
 }
 
+/* ------------------------------------------------------------ geschiedenis */
+
+const archief = { index: null, reeksen: new Map() };
+let geschiedenisStand = { station: null, maaiveld: null, uren: 168, moment: null };
+
+async function haalArchiefIndex() {
+  if (archief.index) return archief.index;
+  try { archief.index = await haalJson('data/archief/index.json'); }
+  catch { archief.index = { meetpunten: {}, van: null, tot: null }; }
+  return archief.index;
+}
+
+async function haalArchief(code) {
+  if (archief.reeksen.has(code)) return archief.reeksen.get(code);
+  let reeks = null;
+  try {
+    const ruw = await haalJson(`data/archief/${encodeURIComponent(code)}.json`);
+    reeks = [];
+    for (let i = 0; i < ruw.mn.length; i++) {
+      if (ruw.mn[i] == null) continue;
+      reeks.push({ t: ruw.van + i * ruw.stap, lo: ruw.mn[i] / 100, hi: ruw.mx[i] / 100 });
+    }
+  } catch { reeks = null; }
+  archief.reeksen.set(code, reeks);
+  return reeks;
+}
+
+/* Zoekt de perioden waarin het water boven een grens uitkwam. Uren die binnen een
+   etmaal van elkaar liggen horen bij dezelfde periode: als het water rond het maaiveld
+   schommelt is dat één hoogwater, geen tientallen losse gevallen. Heel korte en heel
+   kleine overschrijdingen worden niet als aparte periode geteld, want die liggen binnen
+   de meetnauwkeurigheid en binnen de spreiding van de maaiveldhoogte. */
+const SAMENVOEGGAT = 24 * 3600000;
+const MINSTE_DUUR = 2 * 3600000;
+const MINSTE_HOOGTE = 0.05;
+
+function zoekOverschrijdingen(reeks, grensMeter) {
+  const ruw = [];
+  let huidig = null;
+  for (const punt of reeks) {
+    if (punt.hi >= grensMeter) {
+      if (huidig && punt.t - huidig.eind <= SAMENVOEGGAT) {
+        huidig.eind = punt.t;
+        if (punt.hi > huidig.piek) { huidig.piek = punt.hi; huidig.piekTijd = punt.t; }
+      } else {
+        if (huidig) ruw.push(huidig);
+        huidig = { begin: punt.t, eind: punt.t, piek: punt.hi, piekTijd: punt.t };
+      }
+    }
+  }
+  if (huidig) ruw.push(huidig);
+  return ruw.filter((g) => g.eind - g.begin >= MINSTE_DUUR || g.piek - grensMeter >= MINSTE_HOOGTE);
+}
+
+async function toonGeschiedenis(station, maaiveld) {
+  geschiedenisStand = { ...geschiedenisStand, station, maaiveld };
+  const bak = el('geschiedenisblok');
+  const uitleg = el('archiefuitleg');
+  const index = await haalArchiefIndex();
+  const info = index.meetpunten?.[station.c];
+
+  if (!info) {
+    uitleg.textContent =
+      'Het meetarchief voor dit meetpunt wordt nog opgebouwd. Het vult zich elke nacht verder aan ' +
+      'met oudere metingen van Rijkswaterstaat; kom later terug om verder terug te kunnen kijken.';
+    el('geschiedenisgrafiek').replaceChildren();
+    el('geschiedenislegenda').replaceChildren();
+    el('overstromingen').replaceChildren();
+    el('moment').disabled = true;
+    return;
+  }
+
+  const reeks = await haalArchief(station.c);
+  if (!reeks?.length) {
+    uitleg.textContent = 'Het archief van dit meetpunt kon niet worden geladen.';
+    return;
+  }
+
+  el('moment').disabled = false;
+  const van = new Date(reeks[0].t), tot = new Date(reeks.at(-1).t);
+  uitleg.textContent =
+    `Het archief van ${station.n} loopt van ${datumTekst(van)} tot ${datumTekst(tot)} en bevat per uur ` +
+    'de hoogste en de laagste gemeten stand. Kies een moment of een periode om terug te kijken.';
+
+  const invoer = el('moment');
+  invoer.min = naarInvoerTijd(van);
+  invoer.max = naarInvoerTijd(tot);
+  if (!geschiedenisStand.moment) {
+    geschiedenisStand.moment = Math.min(Date.now(), reeks.at(-1).t);
+    invoer.value = naarInvoerTijd(new Date(geschiedenisStand.moment));
+  }
+
+  tekenGeschiedenis();
+  toonOverstromingen(reeks, maaiveld, station);
+}
+
+function naarInvoerTijd(datum) {
+  const p = (n) => String(n).padStart(2, '0');
+  return `${datum.getFullYear()}-${p(datum.getMonth() + 1)}-${p(datum.getDate())}T${p(datum.getHours())}:${p(datum.getMinutes())}`;
+}
+
+function datumTekst(datum) {
+  return datum.toLocaleDateString('nl-NL', { day: 'numeric', month: 'long', year: 'numeric' });
+}
+
+function tekenGeschiedenis() {
+  const { station, maaiveld, uren, moment } = geschiedenisStand;
+  if (!station) return;
+  const reeks = archief.reeksen.get(station.c);
+  if (!reeks?.length) return;
+
+  let venster = reeks;
+  if (uren > 0) {
+    const halve = (uren / 2) * 3600000;
+    venster = reeks.filter((p) => p.t >= moment - halve && p.t <= moment + halve);
+    if (venster.length < 3) venster = reeks.slice(-Math.min(reeks.length, uren));
+  }
+
+  tekenGrafiek({
+    doel: 'geschiedenisgrafiek',
+    legendaDoel: 'geschiedenislegenda',
+    band: venster,
+    maaiveld,
+    station,
+    moment,
+    toonNu: false,
+    leegTekst: 'Voor deze periode staan er geen metingen in het archief.',
+  });
+
+  // Wat stond het water op het gekozen moment?
+  const dichtstbij = reeks.reduce((beste, p) =>
+    Math.abs(p.t - moment) < Math.abs(beste.t - moment) ? p : beste, reeks[0]);
+  const regel = el('momentwaarde');
+  if (Math.abs(dichtstbij.t - moment) > 6 * 3600000) {
+    regel.textContent = 'Voor het gekozen moment staat er niets in het archief.';
+    return;
+  }
+  const stukken = [
+    `Op ${datumTijdTekst(new Date(dichtstbij.t))} stond het water tussen ${meter(dichtstbij.lo)} en ` +
+    `${meter(dichtstbij.hi)} NAP`,
+  ];
+  if (maaiveld != null) {
+    const marge = maaiveld - dichtstbij.hi;
+    stukken.push(marge >= 0
+      ? `dat is ${meter(marge)} onder uw maaiveld`
+      : `dat is ${meter(Math.abs(marge))} boven uw maaiveld`);
+  }
+  regel.textContent = stukken.join(' — ') + '.';
+}
+
+function toonOverstromingen(reeks, maaiveld, station) {
+  const bak = el('overstromingen');
+  bak.replaceChildren();
+  const van = datumTekst(new Date(reeks[0].t));
+  const tot = datumTekst(new Date(reeks.at(-1).t));
+
+  if (maaiveld == null) {
+    bak.append(maakEl('p', 'hulp',
+      'Zonder maaiveldhoogte is niet te bepalen of het water hier ooit boven de grond stond.'));
+    return;
+  }
+
+  const gebeurtenissen = zoekOverschrijdingen(reeks, maaiveld);
+  if (!gebeurtenissen.length) {
+    const p = maakEl('p', 'geen-gebeurtenis');
+    p.textContent =
+      `In het archief van ${station.n} (${van} tot ${tot}) is het water nooit boven uw maaiveld van ` +
+      `${meter(maaiveld)} NAP uitgekomen. De hoogste stand in die periode was ` +
+      `${meter(Math.max(...reeks.map((p2) => p2.hi)))} NAP.`;
+    bak.append(p);
+    return;
+  }
+
+  const hoogste = reeks.reduce((b, p) => (p.hi > b.hi ? p : b), reeks[0]);
+  const kop = maakEl('p');
+  kop.textContent =
+    `Sinds ${van} kwam het water bij ${station.n} ${gebeurtenissen.length === 1 ? 'één keer' : gebeurtenissen.length + ' keer'} ` +
+    `boven uw maaiveld van ${meter(maaiveld)} NAP. De hoogste stand in het hele archief was ` +
+    `${meter(hoogste.hi)} NAP op ${datumTijdTekst(new Date(hoogste.t))}, ` +
+    `${meter(hoogste.hi - maaiveld)} boven het maaiveld.`;
+  bak.append(kop);
+
+  const lijst = maakEl('ul', 'gebeurtenissen');
+  for (const g of [...gebeurtenissen].reverse().slice(0, 12)) {
+    const item = maakEl('li');
+    const duurUren = (g.eind - g.begin) / 3600000 + 1;
+    item.append(maakEl('b', null, datumTijdTekst(new Date(g.begin))));
+    item.append(document.createTextNode(
+      `duurde ${duurTekst(duurUren)} en kwam tot ${meter(g.piek)} NAP, ` +
+      `${meter(g.piek - maaiveld)} boven het maaiveld`));
+    item.append(maakEl('br'));
+    const knop = maakEl('button', 'tekstknop', 'Bekijk deze periode');
+    knop.type = 'button';
+    knop.addEventListener('click', () => {
+      geschiedenisStand.moment = g.piekTijd;
+      el('moment').value = naarInvoerTijd(new Date(g.piekTijd));
+      kiesBereik(168);
+      el('geschiedenisgrafiek').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+    item.append(knop);
+    lijst.append(item);
+  }
+  bak.append(lijst);
+  if (gebeurtenissen.length > 12) {
+    bak.append(maakEl('p', 'hulp', `De twaalf meest recente van ${gebeurtenissen.length} perioden worden getoond.`));
+  }
+}
+
+function kiesBereik(uren) {
+  geschiedenisStand.uren = uren;
+  for (const knop of document.querySelectorAll('.knoppenrij button')) {
+    knop.classList.toggle('actief', Number(knop.dataset.uren) === uren);
+  }
+  tekenGeschiedenis();
+}
+
+function koppelGeschiedenis() {
+  el('moment').addEventListener('change', (e) => {
+    const gekozen = Date.parse(e.target.value);
+    if (Number.isFinite(gekozen)) { geschiedenisStand.moment = gekozen; tekenGeschiedenis(); }
+  });
+  for (const knop of document.querySelectorAll('.knoppenrij button')) {
+    knop.addEventListener('click', () => kiesBereik(Number(knop.dataset.uren)));
+  }
+}
+
 /* -------------------------------------------------------------- overzichten */
 
 function toonStijgers() {
@@ -646,13 +907,19 @@ function toonStijgers() {
     const tr = maakEl('tr');
     tr.append(maakEl('th', null, s.n));
     tr.firstChild.setAttribute('scope', 'row');
-    tr.append(maakEl('td', null, `${meter(s.v / 100)} NAP`));
+    const nuCel = maakEl('td', null, `${meter(s.v / 100)} NAP`);
+    nuCel.dataset.kop = 'Nu';
+    tr.append(nuCel);
     const verandering = maakEl('td', s.tr > 0 ? 'pijl-op' : s.tr < 0 ? 'pijl-neer' : null,
       `${trendPijl(s.tr)} ${nlGetal(s.tr, 1)} cm/u`);
+    verandering.dataset.kop = 'Verandering';
     tr.append(verandering);
-    tr.append(maakEl('td', null, s.vwMax == null ? '–'
-      : `${meter(s.vwMax / 100)} NAP${s.vw === 'afgeleid' ? ' (afgeleid)' : ''}`));
+    const verwachtCel = maakEl('td', null, s.vwMax == null ? '–'
+      : `${meter(s.vwMax / 100)} NAP${s.vw === 'afgeleid' ? ' (afgeleid)' : ''}`);
+    verwachtCel.dataset.kop = 'Hoogst verwacht';
+    tr.append(verwachtCel);
     const klasse = maakEl('td');
+    klasse.dataset.kop = 'Klasse';
     const speld = maakEl('span', 'speld', s.kl || '–');
     if (s.kle && s.kl) { speld.style.background = s.kle; speld.style.color = '#fff'; }
     klasse.append(speld);
@@ -712,6 +979,22 @@ function toonLandkaart() {
     }).addTo(kaart);
   });
   pdok.addTo(kaart);
+
+  // Op een telefoon zou een veeg over de kaart de pagina vastzetten. De kaart wordt
+  // daarom pas actief na een tik.
+  const aanraakscherm = window.matchMedia('(hover: none)').matches;
+  if (aanraakscherm) {
+    kaart.dragging.disable();
+    kaart.touchZoom.disable();
+    const sluier = maakEl('div', 'kaartsluier');
+    sluier.append(maakEl('span', null, 'Tik om de kaart te bedienen'));
+    sluier.addEventListener('click', () => {
+      kaart.dragging.enable();
+      kaart.touchZoom.enable();
+      sluier.remove();
+    });
+    el('landkaart').append(sluier);
+  }
 
   for (const s of gegevens.stations) {
     const kleur = s.kle || '#007BC7';
@@ -794,6 +1077,22 @@ async function zoekEnKies() {
 }
 
 koppelZoeken();
+koppelGeschiedenis();
+
+// Bij draaien of van breedte veranderen worden de grafieken opnieuw op maat getekend.
+// Alleen de breedte telt: op een telefoon verandert de hoogte bij elke scrollbeweging
+// doordat de adresbalk in- en uitschuift, en dan zou de pagina onder de vinger springen.
+let hertekenWachter;
+let laatsteBreedte = window.innerWidth;
+addEventListener('resize', () => {
+  if (window.innerWidth === laatsteBreedte) return;
+  laatsteBreedte = window.innerWidth;
+  clearTimeout(hertekenWachter);
+  hertekenWachter = setTimeout(() => {
+    for (const opties of [...laatsteGrafieken.values()]) tekenGrafiek(opties);
+  }, 200);
+});
+
 ladenGegevens().catch((fout) => {
   console.error(fout);
   el('ververst').textContent = 'Gegevens niet beschikbaar';

@@ -1,10 +1,16 @@
 # Waterradar
 
-Een website die de actuele waterstanden en de overstromingsverwachting van Rijkswaterstaat
-combineert met de hoogte van de grond, zodat je per adres ziet hoeveel ruimte er is tussen
-het water en het maaiveld — en wanneer die ruimte volgens de verwachting opraakt.
+Een particulier hobbyproject. **Geen website van de overheid en op geen enkele manier
+verbonden met Rijkswaterstaat, PDOK, het Kadaster of een waterschap** — de site gebruikt
+alleen hun openbare data.
 
-De site is volledig Nederlandstalig en draait als statische pagina op GitHub Pages.
+Waterradar combineert de actuele waterstanden en de verwachting van Rijkswaterstaat met de
+hoogte van de grond, zodat je per adres ziet hoeveel ruimte er is tussen het water en het
+maaiveld, wanneer die ruimte volgens de verwachting opraakt, en of het water daar in het
+verleden ooit boven het maaiveld heeft gestaan.
+
+De site is volledig Nederlandstalig, werkt op een telefoon en draait als statische pagina
+op GitHub Pages.
 
 ## Wat de site doet
 
@@ -19,6 +25,8 @@ De site is volledig Nederlandstalig en draait als statische pagina op GitHub Pag
 - **Doorrekenen naar benedenstrooms.** Voor meetpunten waarvoor Rijkswaterstaat zelf geen
   verwachting publiceert, wordt de verandering bovenstrooms overgenomen — vertraagd met de
   looptijd en geschaald met de doorwerking, beide berekend uit de meetreeksen.
+- **Terug in de tijd.** Kies een datum en tijd en zie hoe hoog het water toen stond, met
+  daarbij alle perioden waarin het water bij dat meetpunt boven het gekozen maaiveld uitkwam.
 - **Landelijk beeld.** Alle actieve meetpunten op de kaart, met de klasse-indeling van
   Rijkswaterstaat, plus een overzicht van de sterkste stijgingen.
 
@@ -63,20 +71,45 @@ betekent daar in de praktijk meestal geen wateroverlast. Voor het overstromingsr
 een adres is [overstroomik.nl](https://www.overstroomik.nl/) de officiële bron, voor
 actuele waterberichtgeving [waterinfo.rws.nl](https://waterinfo.rws.nl/).
 
+## Het meetarchief
+
+Rijkswaterstaat bewaart de metingen per tien minuten en levert ze desgevraagd jaren terug,
+maar een jaar aan data is ongeveer 15 MB per meetpunt. Alles in een keer ophalen zou
+onbeleefd zijn tegenover een openbare dienst. Het archief groeit daarom stapsgewijs: elke
+nacht worden de laatste dagen bijgewerkt en wordt er een stuk verder terug opgehaald, tot de
+ingestelde diepte (standaard twee jaar) bereikt is. Op de site staat altijd tot welke datum
+het archief loopt.
+
+Per uur worden de hoogste en de laagste meting bewaard. Voor de vraag of het water ooit boven
+het maaiveld stond is de piek binnen het uur bepalend, en bij getijdenwater laat de
+onderkant de andere kant van de golf zien.
+
+Losse maandbestanden staan in `archief/` in de repository; afgeronde maanden veranderen daarna
+niet meer. Bij het publiceren worden ze samengevoegd tot één bestand per meetpunt, dat de
+browser pas ophaalt zodra je een meetpunt bekijkt.
+
+Sneller opbouwen kan met de hand: start de workflow *Meetarchief bijwerken* met een grotere
+waarde voor `stap_dagen`.
+
 ## Techniek
 
 ```
-site/                 de statische website (geen bouwstap, geen afhankelijkheden)
+site/                    de statische website (geen bouwstap, geen afhankelijkheden)
   index.html
   stijl.css
   app.js
-  data/               wordt bij elke publicatie gegenereerd
+  data/                  wordt bij elke publicatie gegenereerd
+archief/                 de meetgeschiedenis, per maand per meetpunt (wel vastgelegd)
 tools/
-  netwerk.mjs         welke meetpunten stroomopwaarts van welke liggen
-  bouw-data.mjs       haalt de data op en schrijft de JSON-bestanden
-  controleer-data.mjs controleert de data voordat er gepubliceerd wordt
+  rws.mjs                gedeelde toegang tot de WaterWebservices
+  netwerk.mjs            welke meetpunten stroomopwaarts van welke liggen
+  bouw-data.mjs          haalt de actuele data op en schrijft de JSON-bestanden
+  archief.mjs            vult het meetarchief aan en breidt het verder terug uit
+  stel-archief-samen.mjs voegt de maandbestanden samen voor de website
+  controleer-data.mjs    controleert de data voordat er gepubliceerd wordt
 .github/workflows/
-  publiceer.yml       elk half uur verversen en publiceren op GitHub Pages
+  publiceer.yml          elk half uur verversen en publiceren op GitHub Pages
+  archief.yml            elke nacht het meetarchief bijwerken
 ```
 
 De data wordt niet in de repository vastgelegd. De workflow haalt de gegevens op, controleert

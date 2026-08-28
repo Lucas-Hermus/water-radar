@@ -4,8 +4,9 @@
   --rand: #d6dee8;
   --tekst: #16212e;
   --gedempt: #5b6b7d;
-  --blauw: #0b5cab;
-  --blauw-licht: #e3edf9;
+  --blauw: #0d6b73;
+  --blauw-licht: #dff0f1;
+  --accent: #b3630a;
   --groen: #1c7a3e;
   --oranje: #b3630a;
   --rood: #b3241c;
@@ -20,8 +21,9 @@
     --rand: #2a3846;
     --tekst: #e8eef5;
     --gedempt: #9fb0c2;
-    --blauw: #6aa9e8;
-    --blauw-licht: #1b2c40;
+    --blauw: #5fc4cc;
+    --blauw-licht: #16323a;
+    --accent: #e0a24a;
     --groen: #58c67f;
     --oranje: #e0a24a;
     --rood: #f0736a;
@@ -54,7 +56,7 @@ body {
 
 /* ---------- kop ---------- */
 .kop {
-  background: linear-gradient(135deg, #0b3f78, #0b5cab 55%, #1180c4);
+  background: linear-gradient(135deg, #0b3138, #0d6b73 58%, #14979a);
   color: #fff;
   padding: 22px 0;
 }
@@ -69,8 +71,10 @@ body {
 }
 
 /* ---------- blokken ---------- */
-main { padding: 24px 0 40px; display: grid; gap: 20px; }
-main > section { margin: 0; }
+/* minmax(0, 1fr) en min-width:0 zijn nodig omdat een rasterspoor anders meegroeit met
+   het breedste kind; een enkele brede tabel maakte daardoor de hele pagina te breed. */
+main { padding: 24px 0 40px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; }
+main > section { margin: 0; min-width: 0; }
 
 .kaart {
   background: var(--vlak); border: 1px solid var(--rand);
@@ -80,9 +84,10 @@ main > section { margin: 0; }
 .kaart h3 { margin: 0 0 12px; font-size: 17px; }
 .uitleg { margin: 0 0 14px; color: var(--gedempt); font-size: 14.5px; max-width: 74ch; }
 
-.raster-twee { display: grid; gap: 20px; grid-template-columns: 1fr 1fr; margin-bottom: 20px; }
+.raster-twee { display: grid; gap: 20px; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); margin-bottom: 20px; }
 @media (max-width: 720px) { .raster-twee { grid-template-columns: 1fr; } }
-#resultaat { display: grid; gap: 20px; }
+#resultaat { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; }
+#resultaat > * { min-width: 0; }
 #resultaat > .raster-twee { margin-bottom: 0; }
 
 /* ---------- zoeken ---------- */
@@ -113,9 +118,16 @@ main > section { margin: 0; }
 
 .hulp { margin: 12px 0 0; font-size: 14px; color: var(--gedempt); }
 .tekstknop {
-  background: none; border: 0; padding: 0; font: inherit; color: var(--blauw);
+  background: none; border: 0; padding: 4px 0; font: inherit; color: var(--blauw);
   text-decoration: underline; cursor: pointer;
 }
+/* een tikdoel moet met een vinger te raken zijn */
+.gebeurtenissen .tekstknop {
+  display: inline-block; margin-top: 6px; padding: 8px 14px; min-height: 40px;
+  border: 1px solid var(--rand); border-radius: 999px; text-decoration: none;
+  background: var(--vlak);
+}
+.gebeurtenissen .tekstknop:hover { border-color: var(--blauw); }
 .fout { color: var(--rood); font-weight: 600; margin: 12px 0 0; }
 
 /* ---------- oordeel ---------- */
@@ -135,8 +147,8 @@ main > section { margin: 0; }
 .feiten dd strong { font-size: 16px; }
 
 /* ---------- grafiek ---------- */
-.grafiek { width: 100%; overflow-x: auto; }
-.grafiek svg { display: block; width: 100%; min-width: 520px; height: auto; }
+.grafiek { width: 100%; }
+.grafiek svg { display: block; width: 100%; height: auto; }
 .legenda { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 12px; font-size: 13.5px; color: var(--gedempt); }
 .legenda span { display: inline-flex; align-items: center; gap: 7px; }
 .legenda i { width: 16px; height: 3px; border-radius: 2px; display: inline-block; }
@@ -154,7 +166,7 @@ main > section { margin: 0; }
 .speld { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 12.5px; font-weight: 600; }
 
 /* ---------- landkaart ---------- */
-.landkaart { height: 460px; border-radius: 10px; overflow: hidden; border: 1px solid var(--rand); }
+.landkaart { height: 460px; border-radius: 10px; overflow: hidden; border: 1px solid var(--rand); position: relative; }
 .leaflet-container { background: var(--achtergrond); font: inherit; }
 .meetstip {
   border-radius: 50%; border: 2px solid rgba(255, 255, 255, .9);
@@ -186,3 +198,152 @@ a { color: var(--blauw); }
 .voet p { margin: 0 0 6px; }
 .pijl-op { color: var(--rood); }
 .pijl-neer { color: var(--groen); }
+
+/* ---------- melding dat dit geen overheidssite is ---------- */
+.geen-overheid {
+  margin: 18px auto 0;
+  background: var(--vlak);
+  border: 1px solid var(--rand);
+  border-left: 5px solid var(--accent);
+  border-radius: var(--radius);
+  padding: 14px 18px;
+  font-size: 14.5px;
+  max-width: 1080px;
+}
+.geen-overheid strong { display: block; }
+.voet-nadruk { color: var(--tekst); }
+
+/* ---------- kaart met twee vingers bedienen op mobiel ---------- */
+.kaartsluier {
+  position: absolute; inset: 0; z-index: 500; display: flex;
+  align-items: center; justify-content: center; text-align: center;
+  background: rgba(10, 25, 30, .42); color: #fff; font-size: 15px;
+  padding: 20px; cursor: pointer;
+}
+
+/* =======================================================================
+   Mobiel. De site wordt vooral op een telefoon gebruikt, dus alles moet
+   binnen de schermbreedte passen zonder horizontaal te schuiven.
+   ======================================================================= */
+
+@media (max-width: 760px) {
+  body { font-size: 15.5px; }
+  .omhulsel { padding: 0 14px; }
+
+  .kop { padding: 16px 0; }
+  .kop-inhoud { flex-direction: column; align-items: flex-start; gap: 10px; }
+  .kop h1 { font-size: 23px; }
+  .merk-teken { font-size: 28px; }
+  .ondertitel { font-size: 14px; }
+  .ververst { font-size: 13px; padding: 5px 12px; }
+
+  main { padding: 16px 0 28px; gap: 14px; }
+  .kaart { padding: 16px 15px; border-radius: 10px; }
+  .kaart h2 { font-size: 18px; }
+  .kaart h3 { font-size: 16px; }
+  .uitleg { font-size: 14px; }
+  .geen-overheid { margin-top: 14px; padding: 12px 15px; font-size: 14px; border-radius: 10px; }
+
+  /* zoeken: knop onder het veld, allebei goed aan te tikken */
+  .zoekveld { flex-wrap: wrap; }
+  .zoekveld input { flex: 1 1 100%; padding: 13px 14px; font-size: 16px; }
+  .zoekveld button { flex: 1 1 100%; padding: 13px 20px; min-height: 48px; }
+  .suggesties { max-height: 60vh; }
+  .suggesties li { padding: 12px; min-height: 46px; display: flex; flex-direction: column; }
+  .suggesties .soort { margin-left: 0; }
+
+  .oordeel { padding: 16px 15px; }
+  .oordeel h2 { font-size: 19px; }
+  .oordeel .marge { font-size: 14px; }
+
+  /* feitenlijsten onder elkaar in plaats van twee kolommen */
+  .feiten { grid-template-columns: 1fr; gap: 2px 0; }
+  .feiten dt { font-size: 13px; margin-top: 10px; }
+  .feiten dt:first-child { margin-top: 0; }
+  .feiten dd { font-size: 15.5px; }
+
+  /* tabel als kaartjes, zodat er niets afvalt */
+  .tabelomhulsel { overflow-x: auto; }
+  .tabel { min-width: 0; display: block; }
+  .tabel thead { display: none; }
+  .tabel tbody, .tabel tr, .tabel td, .tabel th { display: block; width: 100%; }
+  .tabel tr {
+    border: 1px solid var(--rand); border-radius: 10px;
+    padding: 10px 12px; margin-bottom: 10px; background: var(--achtergrond);
+  }
+  .tabel tbody th {
+    border: 0; padding: 0 0 6px; font-size: 16px; font-weight: 600;
+  }
+  .tabel td {
+    border: 0; padding: 3px 0; display: flex; justify-content: space-between;
+    gap: 12px; align-items: baseline; font-size: 14.5px;
+  }
+  .tabel td::before {
+    content: attr(data-kop); color: var(--gedempt); font-size: 13px; flex: 0 0 auto;
+  }
+
+  .landkaart { height: 320px; }
+  .schakels { gap: 7px; }
+  .schakel { width: 100%; font-size: 13px; }
+  .legenda { font-size: 13px; gap: 6px 14px; }
+  .waarschuwing p, .uitlegblok { font-size: 14px; }
+  .voet { font-size: 13px; }
+}
+
+@media (max-width: 400px) {
+  .kop h1 { font-size: 21px; }
+  .kaart { padding: 14px 12px; }
+  .omhulsel { padding: 0 11px; }
+}
+
+/* lange meetpuntnamen mogen nooit de bladzijde oprekken */
+body, .kaart, .oordeel, .schakel, .feiten dd, .tabel th, .tabel td { overflow-wrap: anywhere; }
+
+/* wie liever geen beweging ziet */
+@media (prefers-reduced-motion: reduce) {
+  * { scroll-behavior: auto !important; transition: none !important; }
+}
+
+/* ---------- terug in de tijd ---------- */
+.tijdbalk {
+  display: flex; flex-wrap: wrap; gap: 14px 18px; align-items: flex-end;
+  margin-bottom: 14px;
+}
+.tijdveld { display: flex; flex-direction: column; gap: 5px; }
+.tijdveld label { font-size: 13px; color: var(--gedempt); }
+.tijdveld input {
+  padding: 10px 12px; font-size: 15px; min-height: 44px;
+  border: 1px solid var(--rand); border-radius: 9px;
+  background: var(--achtergrond); color: var(--tekst);
+}
+.knoppenrij { display: flex; flex-wrap: wrap; gap: 7px; }
+.knoppenrij button {
+  padding: 9px 14px; min-height: 40px; font-size: 14px; cursor: pointer;
+  border: 1px solid var(--rand); border-radius: 999px;
+  background: var(--vlak); color: var(--tekst);
+}
+.knoppenrij button:hover { border-color: var(--blauw); }
+.knoppenrij button.actief { background: var(--blauw); border-color: var(--blauw); color: #fff; font-weight: 600; }
+.momentwaarde { margin: 0 0 12px; font-size: 15px; font-variant-numeric: tabular-nums; }
+
+.gebeurtenissen { margin: 16px 0 0; padding: 0; list-style: none; display: grid; gap: 8px; }
+.gebeurtenissen li {
+  border: 1px solid var(--rand); border-left: 4px solid var(--rood);
+  border-radius: 9px; padding: 10px 13px; font-size: 14.5px; background: var(--achtergrond);
+}
+.gebeurtenissen b { display: block; }
+.gebeurtenissen .zwak { color: var(--gedempt); font-size: 13.5px; }
+.geen-gebeurtenis {
+  border-left-color: var(--groen); margin-top: 16px;
+  border: 1px solid var(--rand); border-left: 4px solid var(--groen);
+  border-radius: 9px; padding: 10px 13px; font-size: 14.5px; background: var(--achtergrond);
+}
+
+@media (max-width: 760px) {
+  .tijdbalk { gap: 10px; }
+  .tijdveld, .tijdveld input { width: 100%; }
+  .knoppenrij { width: 100%; }
+  .knoppenrij button { flex: 1 1 auto; min-width: 74px; padding: 9px 10px; }
+  .hulp .tekstknop { display: inline-block; padding: 10px 0; min-height: 44px; }
+  .momentwaarde { font-size: 14px; }
+}
